@@ -1,0 +1,112 @@
+import { writable, type Readable } from 'svelte/store';
+import { v4 as uuidv4 } from 'uuid';
+import * as Y from 'yjs';
+import { createTaiorClient, type TaiorRouteMode } from './taior';
+import { BroadcastChannelTransport } from './broadcast-transport';
+import { TaiorProvider } from './yjs-taior-provider';
+import type { Transport } from './transport';
+
+export type ChatMessage = {
+  id: string;
+  roomKey: string;
+  senderId: string;
+  alias: string;
+  text: string;
+  timestamp: number;
+  reinforced: boolean;
+};
+
+export type ChatSession = {
+  messages: Readable<ChatMessage[]>;
+  connected: Readable<boolean>;
+  sendMessage: (text: string, reinforced: boolean) => Promise<void>;
+  disconnect: () => void;
+};
+
+const makePersistKey = (roomKey: string) => `hush-history-${roomKey}`;
+
+export const generateRoomKey = () =>
+  Array.from({ length: 10 }, () => Math.random().toString(36)[2])
+    .join('')
+    .toUpperCase();
+
+export async function createSession(roomKey: string, alias: string, hushId: string): Promise<ChatSession> {
+  const ydoc = new Y.Doc();
+  const yMessages = ydoc.getArray<ChatMessage>('messages');
+  const messages = writable<ChatMessage[]>([]);
+  const connected = writable(false);
+  const taior = await createTaiorClient(false);
+  const peerId = uuidv4();
+  
+  const transport: Transport = new BroadcastChannelTransport({
+    roomKey,
+    peerId
+  });
+  
+  const provider = new TaiorProvider(ydoc, roomKey, transport);
+
+  const persistKey = makePersistKey(roomKey);
+
+  const loadLocal = () => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(persistKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as ChatMessage[];
+      if (yMessages.length === 0 && parsed.length > 0) {
+        yMessages.push(parsed);
+      }
+    } catch (err) {
+      console.warn('Failed to load history', err);
+    }
+  };
+
+  loadLocal();
+
+  const persist = (items: ChatMessage[]) => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(persistKey, JSON.stringify(items.slice(-200)));
+    } catch (err) {
+      console.warn('Failed to persist history', err);
+    }
+  };
+
+  const updateMessages = () => {
+    const current = yMessages.toArray().sort((a, b) => a.timestamp - b.timestamp);
+    messages.set(current);
+    persist(current);
+  };
+
+  yMessages.observeDeep(updateMessages);
+  updateMessages();
+
+  await provider.connect();
+  connected.set(true);
+
+  const sendMessage = async (text: string, reinforced: boolean) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const mode: TaiorRouteMode = reinforced ? 'reinforced' : 'fast';
+    const encoded = new TextEncoder().encode(trimmed);
+    const routed = await taior.send(encoded, mode);
+    const routedText = new TextDecoder().decode(routed);
+    const msg: ChatMessage = {
+      id: uuidv4(),
+      roomKey,
+      senderId: hushId,
+      alias: alias || 'anon',
+      text: routedText,
+      timestamp: Date.now(),
+      reinforced
+    };
+    yMessages.push([msg]);
+  };
+
+  const disconnect = () => {
+    provider.disconnect();
+    ydoc.destroy();
+  };
+
+  return { messages, connected, sendMessage, disconnect };
+}
