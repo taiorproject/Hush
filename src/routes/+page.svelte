@@ -16,6 +16,8 @@
   const reinforced = writable(false);
   const theme = writable<'light' | 'dark' | 'system'>('system');
   const roomHistory = writable<string[]>([]);
+  const showSheet = writable(false);
+  const joined = writable(false);
 
   const messages = writable<ChatMessage[]>([]);
   const connected = writable(false);
@@ -109,6 +111,7 @@
     const s = await createSession('LOBBY', 'system', hid);
     session = s;
     bindSession(s);
+    joined.set(false);
   });
 
   $: {
@@ -144,6 +147,7 @@
     session = await createSession(keyVal, aliasVal, hid);
     bindSession(session);
     pushRoomHistory(keyVal);
+    joined.set(true);
   };
 
   const send = (event: SubmitEvent) => {
@@ -156,6 +160,9 @@
     session.sendMessage(text, reinforcedVal);
     form.reset();
   };
+
+  const openSheet = () => showSheet.set(true);
+  const closeSheet = () => showSheet.set(false);
 
   onDestroy(() => {
     if (session) {
@@ -191,7 +198,7 @@
     </header>
 
     <div class="grid lg:grid-cols-[340px,1fr] gap-4 items-start">
-      <div class="card-surface rounded-2xl p-5 space-y-4">
+      <div class="card-surface rounded-2xl p-5 space-y-4 hidden md:block">
         <div class="flex items-center gap-3">
           <div class="size-10 rounded-full bg-[var(--surface-muted)] flex items-center justify-center font-semibold text-[var(--accent)]">
             {$alias ? $alias[0]?.toUpperCase() : 'A'}
@@ -275,23 +282,32 @@
         </div>
       </div>
 
-      <div class="card-surface rounded-2xl p-5 flex flex-col gap-4 min-h-[70vh]">
-        <div class="flex items-center justify-between">
-          <div>
-            <div class="text-xs uppercase tracking-[0.25em] muted">Chat</div>
-            <div class="text-lg font-semibold">{$roomKey || 'Room sin nombre'}</div>
+      {#if $joined}
+      <div class="card-surface rounded-2xl p-0 flex flex-col min-h-[70vh] overflow-hidden">
+        <div class="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="size-10 rounded-full bg-[var(--surface-muted)] flex items-center justify-center font-semibold text-[var(--accent)]">
+              {($roomKey || 'R')[0]}
+            </div>
+            <div>
+              <div class="text-lg font-semibold">{$roomKey || 'Room sin nombre'}</div>
+              <div class="text-xs muted flex items-center gap-2">
+                <span class="size-2 rounded-full" style={`background:${$connected ? '#22c55e' : '#facc15'}`}></span>
+                {$connected ? 'Conectado' : 'Conectando'}
+              </div>
+            </div>
           </div>
-          <div class="pill px-3 py-1 rounded-full text-xs flex items-center gap-2">
-            <span class="size-2 rounded-full" style={`background:${$connected ? '#22c55e' : '#facc15'}`}></span>
-            {$connected ? 'En línea' : 'Conectando'}
+          <div class="flex items-center gap-2">
+            <span class="pill px-3 py-1 rounded-full text-xs">{($messages.length || 0)} msgs</span>
+            <button type="button" class="text-sm text-[var(--accent)] hover:underline" on:click={startRoom}>Nueva sala</button>
           </div>
         </div>
 
-        <div class="flex-1 space-y-3 overflow-y-auto pr-1" style="max-height: 60vh;">
+        <div class="flex-1 chat-bg space-y-3 overflow-y-auto p-5" style="max-height: 60vh;">
           {#each $messages as message (message.id)}
             <div class={`flex ${message.senderId === $hushIdStore ? 'justify-end' : 'justify-start'}`}>
-              <div class={`max-w-[80%] rounded-2xl px-3 py-2 shadow-sm ${message.senderId === $hushIdStore ? 'bubble-self' : 'bubble-other'}`}>
-                <div class="flex items-center gap-2 text-xs opacity-80">
+              <div class={`max-w-[78%] rounded-2xl px-3 py-2 shadow-sm ${message.senderId === $hushIdStore ? 'bubble-self' : 'bubble-other'}`}>
+                <div class="flex items-center gap-2 bubble-meta">
                   <span class="font-semibold">{message.alias}</span>
                   <span>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
@@ -308,19 +324,101 @@
           {/if}
         </div>
 
-        <form class="space-y-2" on:submit={send}>
-          <input
-            name="message"
-            placeholder="Escribe un mensaje..."
-            required
-            class="w-full rounded-xl input-surface px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-          />
-          <div class="flex justify-between items-center gap-3">
-            <div class="text-xs muted">Mensajes no se guardan en servidor. Clave compartida = sala.</div>
+        <form class="px-5 py-4 border-t border-[var(--border)] bg-[var(--surface)]" on:submit={send}>
+          <div class="flex items-center gap-3">
+            <input
+              name="message"
+              placeholder="Mensaje"
+              required
+              class="flex-1 chat-input focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            />
             <Button type="submit">Enviar</Button>
           </div>
+          <div class="text-xs muted mt-1">Mensajes no se guardan en servidor. Clave compartida = sala.</div>
         </form>
       </div>
+      {:else}
+      <div class="card-surface rounded-2xl p-10 flex flex-col items-center justify-center text-center gap-4 min-h-[70vh]">
+        <div class="size-16 rounded-full bg-[var(--surface-muted)] flex items-center justify-center text-3xl text-[var(--accent)]">+</div>
+        <div>
+          <div class="text-xl font-semibold">Abre un chat</div>
+          <div class="muted text-sm mt-1">Crea o únete a una sala para empezar a chatear.</div>
+        </div>
+        <div class="flex gap-2">
+          <Button color="light" on:click={startRoom}>Generar clave</Button>
+          <Button on:click={join}>Unirse</Button>
+        </div>
+      </div>
+      {/if}
     </div>
   </div>
+
+  <button
+    class="fixed bottom-6 right-6 md:hidden rounded-full bg-[var(--accent)] text-white shadow-lg px-4 py-3 text-sm font-semibold flex items-center gap-2"
+    on:click={openSheet}
+    aria-label="Unirse o crear sala"
+  >
+    + Sala
+  </button>
+
+  {#if $showSheet}
+    <div
+      class="fixed inset-0 bg-black/40 flex items-end md:hidden"
+      on:click|self={closeSheet}
+      on:keydown={(e) => (e.key === 'Escape' || e.key === 'Enter') && closeSheet()}
+      role="presentation"
+      tabindex="-1"
+      aria-label="Cerrar panel"
+    >
+      <div
+        class="w-full bg-[var(--surface)] border-t border-[var(--border)] rounded-t-2xl p-4 space-y-3 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+      >
+        <div class="flex items-center justify-between">
+          <div class="font-semibold">Unirse o crear sala</div>
+          <button class="text-sm text-[var(--muted)]" on:click={closeSheet}>Cerrar</button>
+        </div>
+
+        <div class="space-y-2">
+          <Label for="room-mobile">Room key</Label>
+          <input
+            id="room-mobile"
+            name="room-mobile"
+            bind:value={$roomKey}
+            on:input={handleRoomInput}
+            placeholder="ABCDEF1234"
+            required
+            class="w-full rounded-xl input-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+          />
+        </div>
+
+        <div class="space-y-2">
+          <Label for="alias-mobile">Alias</Label>
+          <input
+            id="alias-mobile"
+            name="alias-mobile"
+            bind:value={$alias}
+            placeholder="anon"
+            class="w-full rounded-xl input-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+          />
+        </div>
+
+        <div class="flex items-center gap-2 rounded-xl bg-[var(--surface-muted)] px-3 py-2 border border-[var(--border)]">
+          <Checkbox bind:checked={$reinforced} id="reinforced-mobile" name="reinforced-mobile" />
+          <div class="flex-1">
+            <Label for="reinforced-mobile">Privacidad reforzada</Label>
+            <div class="text-xs muted">Más lenta, más blindada</div>
+          </div>
+          <Badge color={$reinforced ? 'green' : 'dark'}>{$reinforced ? 'On' : 'Off'}</Badge>
+        </div>
+
+        <div class="flex gap-2">
+          <Button type="button" class="flex-1" color="light" on:click={startRoom}>Generar</Button>
+          <Button type="button" class="flex-1" color="blue" on:click={() => { join(); closeSheet(); }}>Unirse / Cambiar</Button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

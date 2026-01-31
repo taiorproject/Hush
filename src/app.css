@@ -115,6 +115,25 @@ body {
   color: var(--bubble-other-text);
 }
 
+.bubble-meta {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.chat-bg {
+  background: radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.08), transparent 20%),
+    radial-gradient(circle at 90% 10%, rgba(255, 255, 255, 0.06), transparent 18%),
+    radial-gradient(circle at 50% 80%, rgba(0, 0, 0, 0.04), transparent 20%),
+    var(--surface-muted);
+}
+
+.chat-input {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  padding: 0.5rem 0.75rem;
+}
+
 .input-surface {
   background: var(--surface-muted);
   border: 1px solid var(--border);
