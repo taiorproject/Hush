@@ -4,81 +4,83 @@
 
 :root {
   color-scheme: light;
-  --bg: #f5f7fb;
+  --bg: #f0f2f5;
   --surface: #ffffff;
-  --surface-muted: #eef1f7;
-  --text: #0f172a;
-  --muted: #475569;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --accent-strong: #1d4ed8;
-  --bubble-self: #2563eb;
-  --bubble-self-text: #e7ecff;
-  --bubble-other: #e2e8f0;
-  --bubble-other-text: #0f172a;
-  --shadow: 0 20px 80px rgba(15, 23, 42, 0.08);
+  --surface-muted: #f5f6f7;
+  --text: #050505;
+  --muted: #65676b;
+  --border: #e4e6eb;
+  --accent: #0084ff;
+  --accent-strong: #0073e6;
+  --bubble-self: #0084ff;
+  --bubble-self-text: #ffffff;
+  --bubble-other: #e4e6eb;
+  --bubble-other-text: #050505;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]),
   :root[data-theme='system'] {
     color-scheme: dark;
-    --bg: #0b1727;
-    --surface: #0f1f33;
-    --surface-muted: #122742;
-    --text: #e7ecf3;
-    --muted: #94a3b8;
-    --border: rgba(255, 255, 255, 0.08);
-    --accent: #7dc2ff;
-    --accent-strong: #4ba3f5;
-    --bubble-self: #7dc2ff;
-    --bubble-self-text: #0b1727;
-    --bubble-other: rgba(255, 255, 255, 0.06);
-    --bubble-other-text: #e7ecf3;
-    --shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+    --bg: #111b21;
+    --surface: #1f2c33;
+    --surface-muted: #2a3942;
+    --text: #e9edef;
+    --muted: #8696a0;
+    --border: #2a3942;
+    --accent: #00a884;
+    --accent-strong: #008f6f;
+    --bubble-self: #005c4b;
+    --bubble-self-text: #e9edef;
+    --bubble-other: #2a3942;
+    --bubble-other-text: #e9edef;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0b1727;
-  --surface: #0f1f33;
-  --surface-muted: #122742;
-  --text: #e7ecf3;
-  --muted: #94a3b8;
-  --border: rgba(255, 255, 255, 0.08);
-  --accent: #7dc2ff;
-  --accent-strong: #4ba3f5;
-  --bubble-self: #7dc2ff;
-  --bubble-self-text: #0b1727;
-  --bubble-other: rgba(255, 255, 255, 0.06);
-  --bubble-other-text: #e7ecf3;
-  --shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+  --bg: #111b21;
+  --surface: #1f2c33;
+  --surface-muted: #2a3942;
+  --text: #e9edef;
+  --muted: #8696a0;
+  --border: #2a3942;
+  --accent: #00a884;
+  --accent-strong: #008f6f;
+  --bubble-self: #005c4b;
+  --bubble-self-text: #e9edef;
+  --bubble-other: #2a3942;
+  --bubble-other-text: #e9edef;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f5f7fb;
+  --bg: #f0f2f5;
   --surface: #ffffff;
-  --surface-muted: #eef1f7;
-  --text: #0f172a;
-  --muted: #475569;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --accent-strong: #1d4ed8;
-  --bubble-self: #2563eb;
-  --bubble-self-text: #e7ecff;
-  --bubble-other: #e2e8f0;
-  --bubble-other-text: #0f172a;
-  --shadow: 0 20px 80px rgba(15, 23, 42, 0.08);
+  --surface-muted: #f5f6f7;
+  --text: #050505;
+  --muted: #65676b;
+  --border: #e4e6eb;
+  --accent: #0084ff;
+  --accent-strong: #0073e6;
+  --bubble-self: #0084ff;
+  --bubble-self-text: #ffffff;
+  --bubble-other: #e4e6eb;
+  --bubble-other-text: #050505;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  transition: background 0.3s ease, color 0.3s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  transition: background 0.2s ease, color 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .bg-app {
@@ -108,11 +110,13 @@ body {
 .bubble-self {
   background: var(--bubble-self);
   color: var(--bubble-self-text);
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
 }
 
 .bubble-other {
   background: var(--bubble-other);
   color: var(--bubble-other-text);
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
 }
 
 .bubble-meta {
@@ -120,18 +124,25 @@ body {
   opacity: 0.75;
 }
 
+.bubble-self .bubble-meta {
+  color: var(--bubble-self-text);
+}
+
+.bubble-other .bubble-meta {
+  color: var(--bubble-other-text);
+}
+
 .chat-bg {
-  background: radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.08), transparent 20%),
-    radial-gradient(circle at 90% 10%, rgba(255, 255, 255, 0.06), transparent 18%),
-    radial-gradient(circle at 50% 80%, rgba(0, 0, 0, 0.04), transparent 20%),
-    var(--surface-muted);
+  background: var(--bg);
 }
 
 .chat-input {
   background: var(--surface-muted);
   border: 1px solid var(--border);
-  border-radius: 9999px;
-  padding: 0.5rem 0.75rem;
+  border-radius: 1.5rem;
+  padding: 0.625rem 1rem;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .input-surface {
@@ -142,4 +153,22 @@ body {
 
 .input-surface::placeholder {
   color: var(--muted);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }

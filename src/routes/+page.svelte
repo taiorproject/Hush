@@ -219,289 +219,352 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<div class="min-h-screen bg-app text-[var(--text)]">
-  <div class="mx-auto max-w-5xl px-4 py-10 space-y-6">
-    <header class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+<div class="h-screen flex flex-col bg-app text-[var(--text)] overflow-hidden">
+  <!-- Header compacto estilo Signal -->
+  <header class="flex-shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-4 py-3">
+    <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="size-11 rounded-xl bg-[var(--accent)] text-white flex items-center justify-center font-semibold text-lg shadow-sm">H</div>
-        <div>
-          <div class="text-lg font-semibold leading-tight">Hush</div>
-          <div class="flex gap-2 text-xs muted mt-1">
-            <span class="pill px-2 py-1 rounded-full">P2P</span>
-            <span class="pill px-2 py-1 rounded-full">Privado</span>
-            <span class="pill px-2 py-1 rounded-full">WASM</span>
-          </div>
-        </div>
+        <div class="size-9 rounded-lg bg-[var(--accent)] text-white flex items-center justify-center font-bold text-base shadow-sm">H</div>
+        <h1 class="text-lg font-semibold">Hush</h1>
       </div>
 
-      <div class="flex flex-col md:flex-row gap-3 md:items-center">
-        <div class="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] rounded-full px-3 py-2 shadow-sm min-w-[220px]">
+      <div class="flex items-center gap-2">
+        <div class="hidden md:flex items-center gap-2 bg-[var(--surface-muted)] border border-[var(--border)] rounded-lg px-3 py-1.5">
           <svg class="w-4 h-4 muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" /></svg>
           <input
             type="search"
-            placeholder="Buscar en chat"
-            class="bg-transparent text-sm focus:outline-none w-full"
+            placeholder="Buscar"
+            class="bg-transparent text-sm focus:outline-none w-32"
             bind:value={$searchQuery}
           />
         </div>
-        <div class="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] rounded-full px-3 py-2 shadow-sm">
-          <span class="text-sm muted">Tema</span>
-          <select
-            class="text-sm bg-transparent focus:outline-none"
-            bind:value={$theme}
-            on:change={handleThemeSelect}
-          >
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-            <option value="system">System</option>
-          </select>
-        </div>
+        
         <button
           type="button"
-          class="relative size-11 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-sm font-semibold"
+          class="p-2 hover:bg-[var(--surface-muted)] rounded-lg transition-colors"
           on:click={openProfile}
-          aria-label="Abrir perfil"
+          aria-label="Configuración"
         >
-          {$alias ? $alias[0]?.toUpperCase() : 'P'}
-          <span class="absolute -right-1 -top-1 size-2 rounded-full bg-[var(--accent)]"></span>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
         </button>
       </div>
-    </header>
+    </div>
+  </header>
 
-    <div class="grid lg:grid-cols-[340px,1fr] gap-4 items-start">
-      <div class="card-surface rounded-2xl p-5 space-y-4 hidden md:block">
-        <div class="flex items-center gap-3">
-          <div class="size-10 rounded-full bg-[var(--surface-muted)] flex items-center justify-center font-semibold text-[var(--accent)]">
-            {$alias ? $alias[0]?.toUpperCase() : 'A'}
+  <!-- Layout principal: Sidebar + Chat -->
+  <div class="flex-1 flex overflow-hidden">
+    <!-- Sidebar de conversaciones (estilo Signal/Session) -->
+    <aside class="hidden md:flex flex-col w-80 bg-[var(--surface)] border-r border-[var(--border)]">
+      <!-- Nueva conversación -->
+      <div class="p-3 border-b border-[var(--border)]">
+        <button
+          type="button"
+          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)] transition-colors font-medium"
+          on:click={openSheet}
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Nueva conversación
+        </button>
+      </div>
+
+      <!-- Lista de conversaciones -->
+      <div class="flex-1 overflow-y-auto">
+        {#if $roomHistory.length === 0}
+          <div class="p-4 text-center">
+            <div class="text-sm muted">No hay conversaciones</div>
+            <div class="text-xs muted mt-1">Crea o únete a una sala</div>
           </div>
-          <div>
-            <div class="text-sm muted">Hush ID</div>
-            <div class="font-mono text-base">{$hushIdStore || '—'}</div>
-            <button type="button" class="text-xs text-[var(--accent)] hover:underline" on:click={regenerateHushId}>Generar nuevo</button>
-          </div>
-        </div>
+        {:else}
+          {#each $roomHistory as room}
+            <button
+              type="button"
+              class="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-muted)] transition-colors border-b border-[var(--border)] {$roomKey === room ? 'bg-[var(--surface-muted)]' : ''}"
+              on:click={() => { roomKey.set(room); join(); }}
+            >
+              <div class="size-12 rounded-full bg-[var(--accent)]/10 flex items-center justify-center font-semibold text-[var(--accent)] flex-shrink-0">
+                {room[0]}
+              </div>
+              <div class="flex-1 text-left min-w-0">
+                <div class="font-medium truncate">{room}</div>
+                <div class="text-xs muted truncate">Sala P2P</div>
+              </div>
+            </button>
+          {/each}
+        {/if}
+      </div>
 
-        <div class="space-y-2">
-          <Label for="room">Room key</Label>
-          <div class="flex flex-col sm:flex-row gap-2">
-            <input
-              id="room"
-              name="room"
-              bind:value={$roomKey}
-              on:input={handleRoomInput}
-              placeholder="ABCDEF1234"
-              required
-              class="flex-1 rounded-xl input-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-            />
-            <Button color="light" on:click={startRoom} type="button" class="whitespace-nowrap w-full sm:w-auto">Generar</Button>
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <Label for="alias">Alias</Label>
-          <input
-            id="alias"
-            name="alias"
-            bind:value={$alias}
-            placeholder="anon"
-            class="w-full rounded-xl input-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-          />
-        </div>
-
-        <div class="flex items-center gap-2 rounded-xl bg-[var(--surface-muted)] px-3 py-2 border border-[var(--border)]">
-          <Checkbox bind:checked={$reinforced} id="reinforced" name="reinforced" />
-          <div class="flex-1">
-            <Label for="reinforced">Privacidad reforzada</Label>
-            <div class="text-xs muted">Más lenta, más blindada</div>
-          </div>
-          <Badge color={$reinforced ? 'green' : 'dark'}>{$reinforced ? 'On' : 'Off'}</Badge>
-        </div>
-
-        <Button type="button" class="w-full" color="blue" on:click={join}>Unirse / Cambiar</Button>
-
-        <div class="rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] p-3 space-y-2">
-          <div class="text-xs uppercase tracking-[0.2em] muted">Estado</div>
-          <div class="flex items-center gap-2 text-sm">
-            {#if $connected}
-              <span class="size-2 rounded-full bg-green-500"></span>
-              <span>Conectado</span>
-            {:else}
-              <Spinner size="4" />
-              <span class="muted">Esperando peers...</span>
-            {/if}
-          </div>
-          <div class="text-xs muted">Room: {$roomKey || '—'}</div>
-        </div>
-
-        <div class="rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] p-3 space-y-3">
-          <div class="text-xs uppercase tracking-[0.2em] muted">Historial</div>
-          {#if $roomHistory.length === 0}
-            <div class="text-xs muted">Sin rooms recientes.</div>
+      <!-- Info de conexión en sidebar -->
+      <div class="p-3 border-t border-[var(--border)] bg-[var(--surface-muted)]">
+        <div class="flex items-center gap-2 text-xs">
+          {#if $connected}
+            <span class="size-2 rounded-full bg-green-500"></span>
+            <span class="text-green-600 dark:text-green-400 font-medium">Conectado</span>
           {:else}
-            <div class="flex flex-wrap gap-2">
-              {#each $roomHistory as r}
-                <button
-                  type="button"
-                  class="pill px-3 py-1 rounded-full text-sm hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                  on:click={() => roomKey.set(r)}
-                >
-                  {r}
-                </button>
-              {/each}
-            </div>
+            <Spinner size="3" />
+            <span class="muted">Conectando...</span>
           {/if}
         </div>
       </div>
+    </aside>
 
+    <!-- Área de chat principal -->
+    <main class="flex-1 flex flex-col bg-[var(--bg)] overflow-hidden">
       {#if $joined}
-      <div class="card-surface rounded-2xl p-0 flex flex-col min-h-[70vh] overflow-hidden">
-        <div class="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="size-10 rounded-full bg-[var(--surface-muted)] flex items-center justify-center font-semibold text-[var(--accent)]">
-              {($roomKey || 'R')[0]}
-            </div>
-            <div>
-              <div class="text-lg font-semibold">{$roomKey || 'Room sin nombre'}</div>
-              <div class="text-xs muted flex items-center gap-2">
-                <span class="size-2 rounded-full" style={`background:${$connected ? '#22c55e' : '#facc15'}`}></span>
-                {$connected ? 'Conectado' : 'Conectando'}
+        <!-- Header del chat activo -->
+        <div class="flex-shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-4 py-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <button
+                type="button"
+                class="md:hidden p-2 -ml-2 hover:bg-[var(--surface-muted)] rounded-lg"
+                on:click={openSheet}
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div class="size-10 rounded-full bg-[var(--accent)]/10 flex items-center justify-center font-semibold text-[var(--accent)]">
+                {($roomKey || 'R')[0]}
+              </div>
+              <div>
+                <div class="font-semibold">{$roomKey || 'Sala'}</div>
+                <div class="text-xs muted flex items-center gap-1.5">
+                  <span class="size-1.5 rounded-full" style={`background:${$connected ? '#22c55e' : '#facc15'}`}></span>
+                  {$connected ? 'Activo' : 'Conectando'}
+                </div>
               </div>
             </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="pill px-3 py-1 rounded-full text-xs">{($messages.length || 0)} msgs</span>
-            <button type="button" class="text-sm text-[var(--accent)] hover:underline" on:click={startRoom}>Nueva sala</button>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="p-2 hover:bg-[var(--surface-muted)] rounded-lg transition-colors"
+                on:click={startRoom}
+                aria-label="Nueva sala"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="flex-1 chat-bg space-y-3 overflow-y-auto p-5" style="max-height: 60vh;">
+        <!-- Mensajes -->
+        <div class="flex-1 overflow-y-auto px-4 py-4 space-y-2">
           {#each $filteredMessages as message (message.id)}
             <div class={`flex ${message.senderId === $hushIdStore ? 'justify-end' : 'justify-start'}`}>
-              <div class={`max-w-[78%] rounded-2xl px-3 py-2 shadow-sm ${message.senderId === $hushIdStore ? 'bubble-self' : 'bubble-other'}`}>
-                <div class="flex items-center gap-2 bubble-meta">
-                  <span class="font-semibold">{message.alias}</span>
-                  <span>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                <p class="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{message.text}</p>
-                {#if message.reinforced}
-                  <span class="pill inline-block mt-2 px-2 py-1 rounded-full text-[11px]">Reforzado</span>
+              <div class={`flex gap-2 max-w-[75%] ${message.senderId === $hushIdStore ? 'flex-row-reverse' : 'flex-row'}`}>
+                {#if message.senderId !== $hushIdStore}
+                  <div class="size-8 rounded-full bg-[var(--surface-muted)] flex items-center justify-center text-xs font-semibold flex-shrink-0 mt-1">
+                    {message.alias[0]?.toUpperCase()}
+                  </div>
                 {/if}
+                <div class="flex flex-col gap-1">
+                  {#if message.senderId !== $hushIdStore}
+                    <div class="text-xs font-medium px-3">{message.alias}</div>
+                  {/if}
+                  <div class={`rounded-2xl px-4 py-2 ${message.senderId === $hushIdStore ? 'bubble-self rounded-tr-sm' : 'bubble-other rounded-tl-sm'}`}>
+                    <p class="text-[15px] leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+                    <div class="flex items-center gap-2 mt-1">
+                      <span class="text-[11px] opacity-70">{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {#if message.reinforced}
+                        <span class="text-[10px] opacity-60">🔒</span>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           {/each}
 
           {#if $filteredMessages.length === 0}
-            <div class="text-center muted text-sm py-6">Sin mensajes aún. Envía el primero.</div>
+            <div class="flex items-center justify-center h-full">
+              <div class="text-center">
+                <div class="size-16 rounded-full bg-[var(--surface-muted)] flex items-center justify-center mx-auto mb-3">
+                  <svg class="w-8 h-8 muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </div>
+                <div class="text-sm muted">No hay mensajes</div>
+                <div class="text-xs muted mt-1">Envía el primer mensaje</div>
+              </div>
+            </div>
           {/if}
         </div>
 
-        <form class="px-5 py-4 border-t border-[var(--border)] bg-[var(--surface)]" on:submit={send}>
-          <div class="flex items-center gap-3">
-            <input
-              name="message"
-              placeholder="Mensaje"
-              required
-              class="flex-1 chat-input focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-            />
-            <Button type="submit">Enviar</Button>
+        <!-- Input de mensaje -->
+        <form class="flex-shrink-0 bg-[var(--surface)] border-t border-[var(--border)] px-4 py-3" on:submit={send}>
+          <div class="flex items-end gap-2">
+            <div class="flex-1 bg-[var(--surface-muted)] rounded-2xl border border-[var(--border)] px-4 py-2.5 focus-within:border-[var(--accent)] transition-colors">
+              <input
+                name="message"
+                placeholder="Escribe un mensaje..."
+                required
+                class="w-full bg-transparent text-[15px] focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              class="p-3 bg-[var(--accent)] hover:bg-[var(--accent-strong)] text-white rounded-full transition-colors flex-shrink-0"
+              aria-label="Enviar mensaje"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
           </div>
-          <div class="text-xs muted mt-1">Mensajes no se guardan en servidor. Clave compartida = sala.</div>
+          {#if $reinforced}
+            <div class="flex items-center gap-1.5 mt-2 text-xs text-green-600 dark:text-green-400">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+              </svg>
+              <span>Privacidad reforzada activada</span>
+            </div>
+          {/if}
         </form>
-      </div>
       {:else}
-      <div class="card-surface rounded-2xl p-10 flex flex-col items-center justify-center text-center gap-4 min-h-[70vh]">
-        <div class="size-16 rounded-full bg-[var(--surface-muted)] flex items-center justify-center text-3xl text-[var(--accent)]">+</div>
-        <div>
-          <div class="text-xl font-semibold">Abre un chat</div>
-          <div class="muted text-sm mt-1">Crea o únete a una sala para empezar a chatear.</div>
+        <!-- Estado vacío -->
+        <div class="flex-1 flex items-center justify-center p-8">
+          <div class="text-center max-w-md">
+            <div class="size-20 rounded-full bg-[var(--surface)] border-2 border-[var(--border)] flex items-center justify-center mx-auto mb-4">
+              <svg class="w-10 h-10 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <h2 class="text-xl font-semibold mb-2">Bienvenido a Hush</h2>
+            <p class="text-sm muted mb-6">Mensajería privada y segura con cifrado P2P. Crea o únete a una sala para comenzar.</p>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button color="light" on:click={openSheet} class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Nueva sala
+              </Button>
+              <Button on:click={openSheet} class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                </svg>
+                Unirse
+              </Button>
+            </div>
+          </div>
         </div>
-        <div class="flex gap-2">
-          <Button color="light" on:click={startRoom}>Generar clave</Button>
-          <Button on:click={join}>Unirse</Button>
-        </div>
-      </div>
       {/if}
-    </div>
+    </main>
   </div>
 
   <button
-    class="fixed bottom-6 right-6 md:hidden rounded-full bg-[var(--accent)] text-white shadow-lg px-4 py-3 text-sm font-semibold flex items-center gap-2"
+    class="fixed bottom-6 right-6 md:hidden rounded-full bg-[var(--accent)] text-white shadow-lg size-14 flex items-center justify-center"
     on:click={openSheet}
-    aria-label="Unirse o crear sala"
+    aria-label="Nueva conversación"
   >
-    + Sala
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+    </svg>
   </button>
 
   {#if $showSheet}
     <div
-      class="fixed inset-0 bg-black/40 flex items-end md:hidden"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
       on:click|self={closeSheet}
-      on:keydown={(e) => (e.key === 'Escape' || e.key === 'Enter') && closeSheet()}
+      on:keydown={(e) => e.key === 'Escape' && closeSheet()}
       role="presentation"
       tabindex="-1"
-      aria-label="Cerrar panel"
     >
       <div
-        class="w-full bg-[var(--surface)] border-t border-[var(--border)] rounded-t-2xl p-4 space-y-3 shadow-2xl"
+        class="w-full max-w-md bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-4 shadow-2xl"
         role="dialog"
         aria-modal="true"
-        tabindex="-1"
       >
         <div class="flex items-center justify-between">
-          <div class="font-semibold">Unirse o crear sala</div>
-          <button class="text-sm text-[var(--muted)]" on:click={closeSheet}>Cerrar</button>
+          <h3 class="text-lg font-semibold">Nueva conversación</h3>
+          <button
+            type="button"
+            class="p-2 hover:bg-[var(--surface-muted)] rounded-lg transition-colors"
+            on:click={closeSheet}
+            aria-label="Cerrar"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
-        <div class="space-y-2">
-          <Label for="room-mobile">Room key</Label>
-          <input
-            id="room-mobile"
-            name="room-mobile"
-            bind:value={$roomKey}
-            on:input={handleRoomInput}
-            placeholder="ABCDEF1234"
-            required
-            class="w-full rounded-xl input-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-          />
-        </div>
-
-        <div class="space-y-2">
-          <Label for="alias-mobile">Alias</Label>
-          <input
-            id="alias-mobile"
-            name="alias-mobile"
-            bind:value={$alias}
-            placeholder="anon"
-            class="w-full rounded-xl input-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-          />
-        </div>
-
-        <div class="flex items-center gap-2 rounded-xl bg-[var(--surface-muted)] px-3 py-2 border border-[var(--border)]">
-          <Checkbox bind:checked={$reinforced} id="reinforced-mobile" name="reinforced-mobile" />
-          <div class="flex-1">
-            <Label for="reinforced-mobile">Privacidad reforzada</Label>
-            <div class="text-xs muted">Más lenta, más blindada</div>
+        <div class="space-y-3">
+          <div class="space-y-2">
+            <Label for="room-modal" class="text-sm font-medium">Clave de sala</Label>
+            <div class="flex gap-2">
+              <input
+                id="room-modal"
+                name="room-modal"
+                bind:value={$roomKey}
+                on:input={handleRoomInput}
+                placeholder="ABCDEF1234"
+                required
+                class="flex-1 rounded-lg input-surface px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] font-mono"
+              />
+              <Button type="button" color="light" on:click={startRoom} class="whitespace-nowrap">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </Button>
+            </div>
           </div>
-          <Badge color={$reinforced ? 'green' : 'dark'}>{$reinforced ? 'On' : 'Off'}</Badge>
+
+          <div class="space-y-2">
+            <Label for="alias-modal" class="text-sm font-medium">Tu nombre</Label>
+            <input
+              id="alias-modal"
+              name="alias-modal"
+              bind:value={$alias}
+              placeholder="anon"
+              class="w-full rounded-lg input-surface px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            />
+          </div>
+
+          <div class="flex items-center gap-3 rounded-lg bg-[var(--surface-muted)] px-4 py-3 border border-[var(--border)]">
+            <Checkbox bind:checked={$reinforced} id="reinforced-modal" name="reinforced-modal" />
+            <div class="flex-1">
+              <Label for="reinforced-modal" class="text-sm font-medium">Privacidad reforzada</Label>
+              <div class="text-xs muted mt-0.5">Mayor protección, menor velocidad</div>
+            </div>
+            <Badge color={$reinforced ? 'green' : 'dark'} class="text-xs">{$reinforced ? 'On' : 'Off'}</Badge>
+          </div>
         </div>
 
-        <div class="flex gap-2">
-          <Button type="button" class="flex-1" color="light" on:click={startRoom}>Generar</Button>
-          <Button type="button" class="flex-1" color="blue" on:click={() => { join(); closeSheet(); }}>Unirse / Cambiar</Button>
+        <div class="flex gap-3 pt-2">
+          <Button type="button" class="flex-1" color="light" on:click={closeSheet}>Cancelar</Button>
+          <Button type="button" class="flex-1" color="blue" on:click={() => { join(); closeSheet(); }}>
+            Unirse
+          </Button>
         </div>
       </div>
     </div>
   {/if}
 
   {#if $showProfile}
-    <div class="fixed inset-0 bg-black/50 flex items-center justify-center px-4" role="dialog" aria-modal="true">
-      <div class="w-full max-w-2xl bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-4 shadow-xl">
-        <div class="flex items-start justify-between gap-3">
+    <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" role="dialog" aria-modal="true">
+      <div class="w-full max-w-2xl bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 space-y-5 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between">
           <div>
-            <div class="text-sm uppercase tracking-[0.2em] muted">Perfil</div>
-            <div class="text-xl font-semibold">Ajustes y cuenta</div>
+            <h2 class="text-xl font-semibold">Configuración</h2>
+            <p class="text-sm muted mt-1">Ajustes y cuenta</p>
           </div>
-          <button class="text-sm text-[var(--muted)]" on:click={closeProfile}>Cerrar</button>
+          <button
+            type="button"
+            class="p-2 hover:bg-[var(--surface-muted)] rounded-lg transition-colors"
+            on:click={closeProfile}
+            aria-label="Cerrar"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         <div class="grid md:grid-cols-2 gap-4">
