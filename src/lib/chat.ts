@@ -5,6 +5,7 @@ import { createTaiorClient, type TaiorRouteMode } from './taior';
 import { BroadcastChannelTransport } from './broadcast-transport';
 import { WebRTCTransport } from './webrtc-transport';
 import { TaiorProvider } from './yjs-taior-provider';
+import { CryptoStorage } from './crypto-storage';
 import type { Transport } from './transport';
 
 export type ChatMessage = {
@@ -38,15 +39,25 @@ export async function createSession(roomKey: string, alias: string, hushId: stri
   const messages = writable<ChatMessage[]>([]);
   const connected = writable(false);
   const isProd = import.meta.env.PROD;
-  const taior = await createTaiorClient(isProd);
+  const taior = await createTaiorClient();
   const peerId = uuidv4();
   const signalingServer = import.meta.env.VITE_SIGNALING_URL || 'wss://hush-signal.railway.app';
+  const cryptoStorage = new CryptoStorage();
+
+  taior.enableCoverTraffic(true, 0.3);
 
   const transport: Transport = isProd
     ? new WebRTCTransport({
         roomKey,
         peerId,
-        signalingServer
+        signalingServer,
+        turnServers: [
+          {
+            urls: 'turn:relay.hush.network:3478',
+            username: 'hush',
+            credential: 'anonymous'
+          }
+        ]
       })
     : new BroadcastChannelTransport({
         roomKey,
@@ -57,28 +68,26 @@ export async function createSession(roomKey: string, alias: string, hushId: stri
 
   const persistKey = makePersistKey(roomKey);
 
-  const loadLocal = () => {
+  const loadLocal = async () => {
     if (typeof localStorage === 'undefined') return;
     try {
-      const raw = localStorage.getItem(persistKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as ChatMessage[];
-      if (yMessages.length === 0 && parsed.length > 0) {
+      const parsed = await cryptoStorage.loadEncrypted<ChatMessage[]>(persistKey, roomKey);
+      if (parsed && yMessages.length === 0 && parsed.length > 0) {
         yMessages.push(parsed);
       }
     } catch (err) {
-      console.warn('Failed to load history', err);
+      console.warn('Failed to load encrypted history', err);
     }
   };
 
-  loadLocal();
+  await loadLocal();
 
-  const persist = (items: ChatMessage[]) => {
+  const persist = async (items: ChatMessage[]) => {
     if (typeof localStorage === 'undefined') return;
     try {
-      localStorage.setItem(persistKey, JSON.stringify(items.slice(-200)));
+      await cryptoStorage.saveEncrypted(persistKey, items.slice(-200), roomKey);
     } catch (err) {
-      console.warn('Failed to persist history', err);
+      console.warn('Failed to persist encrypted history', err);
     }
   };
 
@@ -97,7 +106,7 @@ export async function createSession(roomKey: string, alias: string, hushId: stri
   const sendMessage = async (text: string, reinforced: boolean) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const mode: TaiorRouteMode = reinforced ? 'reinforced' : 'fast';
+    const mode: TaiorRouteMode = reinforced ? 'mix' : 'adaptive';
     const encoded = new TextEncoder().encode(trimmed);
     const routed = await taior.send(encoded, mode);
     const routedText = new TextDecoder().decode(routed);

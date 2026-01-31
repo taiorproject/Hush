@@ -21,6 +21,8 @@
   const showProfile = writable(false);
   const searchQuery = writable('');
   const recoveryKey = writable('');
+  const wasmError = writable<string | null>(null);
+  const wasmReady = writable(false);
 
   const messages = writable<ChatMessage[]>([]);
   const connected = writable(false);
@@ -128,10 +130,18 @@
     const hid = ensureHushId();
     loadRoomHistory();
     ensureRecoveryKey();
-    const s = await createSession('LOBBY', 'system', hid);
-    session = s;
-    bindSession(s);
-    joined.set(false);
+    
+    try {
+      const s = await createSession('LOBBY', 'system', hid);
+      session = s;
+      bindSession(s);
+      joined.set(false);
+      wasmReady.set(true);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      wasmError.set(errorMsg);
+      console.error('Error al inicializar Hush:', err);
+    }
   });
 
   $: {
@@ -220,6 +230,74 @@
 </svelte:head>
 
 <div class="h-screen flex flex-col bg-app text-[var(--text)] overflow-hidden">
+  {#if $wasmError}
+    <div class="h-screen flex items-center justify-center p-6 bg-red-50 dark:bg-red-950">
+      <div class="max-w-2xl w-full bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 border-2 border-red-500">
+        <div class="flex items-center gap-4 mb-6">
+          <div class="size-16 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center flex-shrink-0">
+            <svg class="w-8 h-8 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold text-red-600 dark:text-red-400">Error Crítico de Seguridad</h1>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Hush requiere libtaior WASM para funcionar de forma segura</p>
+          </div>
+        </div>
+        
+        <div class="bg-red-50 dark:bg-red-950/50 rounded-lg p-4 mb-6 border border-red-200 dark:border-red-800">
+          <p class="text-sm font-mono text-red-800 dark:text-red-200 whitespace-pre-wrap">{$wasmError}</p>
+        </div>
+
+        <div class="space-y-4 text-sm">
+          <div>
+            <h3 class="font-semibold mb-2 flex items-center gap-2">
+              ¿Por qué es necesario?
+            </h3>
+            <p class="text-gray-700 dark:text-gray-300">
+              Hush usa <strong>libtaior</strong> para enrutamiento anónimo con cifrado multicapa (AORP). 
+              Sin WASM, la aplicación NO puede garantizar privacidad ni anonimato.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="font-semibold mb-2 flex items-center gap-2">
+              Pasos para compilar libtaior:
+            </h3>
+            <div class="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 font-mono text-xs space-y-2">
+              <div><span class="text-green-600 dark:text-green-400">$</span> cd ../libtaior</div>
+              <div><span class="text-green-600 dark:text-green-400">$</span> ./build-wasm.sh</div>
+              <div><span class="text-green-600 dark:text-green-400">$</span> cd ../Hush</div>
+              <div><span class="text-green-600 dark:text-green-400">$</span> npm install ../libtaior/pkg</div>
+              <div><span class="text-green-600 dark:text-green-400">$</span> npm run dev</div>
+            </div>
+          </div>
+
+          <div class="bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
+            <p class="text-xs text-yellow-800 dark:text-yellow-200">
+              <strong>Advertencia:</strong> NO uses Hush sin libtaior WASM. Sería completamente inseguro y expondría tu IP y metadatos.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="mt-6 w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+          on:click={() => window.location.reload()}
+        >
+          Reintentar
+        </button>
+      </div>
+    </div>
+  {:else if !$wasmReady}
+    <div class="h-screen flex items-center justify-center">
+      <div class="text-center">
+        <Spinner size="12" />
+        <p class="mt-4 text-sm muted">Inicializando libtaior WASM...</p>
+        <p class="mt-2 text-xs muted">Verificando seguridad y privacidad</p>
+      </div>
+    </div>
+  {:else}
   <!-- Header compacto estilo Signal -->
   <header class="flex-shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-3 py-2.5 md:px-4 md:py-3">
     <div class="flex items-center justify-between">
@@ -683,5 +761,6 @@
         </div>
       </div>
     </div>
+  {/if}
   {/if}
 </div>

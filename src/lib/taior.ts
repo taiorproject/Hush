@@ -6,7 +6,8 @@ export type TaiorClient = {
   status: Readable<'disconnected' | 'connecting' | 'connected'>;
   send: (payload: Uint8Array, mode: TaiorRouteMode) => Promise<Uint8Array>;
   disconnect: () => void;
-  address?: () => string;
+  address: () => string;
+  enableCoverTraffic: (enabled: boolean, ratio: number) => void;
 };
 
 let wasmModule: any = null;
@@ -19,19 +20,20 @@ async function loadWasmModule() {
     wasmModule = module;
     return module;
   } catch (err) {
-    console.warn('libtaior WASM not available, using shim:', err);
-    return null;
+    throw new Error(
+      'libtaior WASM no disponible. Hush requiere libtaior para funcionar de forma segura.\n\n' +
+      'Para compilar libtaior:\n' +
+      '1. cd ../libtaior\n' +
+      '2. ./build-wasm.sh\n' +
+      '3. cd ../Hush && npm install ../libtaior/pkg\n\n' +
+      `Error original: ${err}`
+    );
   }
 }
 
-export async function createTaiorClient(useWasm = true): Promise<TaiorClient> {
-  if (useWasm) {
-    const wasm = await loadWasmModule();
-    if (wasm) {
-      return createTaiorWasm(wasm);
-    }
-  }
-  return createTaiorLite();
+export async function createTaiorClient(): Promise<TaiorClient> {
+  const wasm = await loadWasmModule();
+  return createTaiorWasm(wasm);
 }
 
 function createTaiorWasm(wasm: any): TaiorClient {
@@ -78,36 +80,16 @@ function createTaiorWasm(wasm: any): TaiorClient {
     return taiorInstance.address();
   };
 
-  return { status, send, disconnect, address };
-}
-
-function createTaiorLite(): TaiorClient {
-  const status = writable<'disconnected' | 'connecting' | 'connected'>('connecting');
-
-  const ready = new Promise<void>((resolve) => {
-    setTimeout(() => {
-      status.set('connected');
-      resolve();
-    }, 200);
-  });
-
-  const send = async (payload: Uint8Array, mode: TaiorRouteMode) => {
-    await ready;
-    if (mode === 'reinforced' || mode === 'mix') {
-      await new Promise((r) => setTimeout(r, 150));
+  const enableCoverTraffic = (enabled: boolean, ratio: number) => {
+    if (!taiorInstance) return;
+    try {
+      if (typeof taiorInstance.enableCoverTraffic === 'function') {
+        taiorInstance.enableCoverTraffic(enabled, ratio);
+      }
+    } catch (err) {
+      console.error('Error enabling cover traffic:', err);
     }
-    return payload;
   };
 
-  const disconnect = () => {
-    status.set('disconnected');
-  };
-
-  const address = () => {
-    return `taior://lite-${Math.random().toString(36).slice(2, 14)}`;
-  };
-
-  return { status, send, disconnect, address };
+  return { status, send, disconnect, address, enableCoverTraffic };
 }
-
-export { createTaiorLite };

@@ -91,11 +91,17 @@ export class WebRTCTransport implements Transport {
   }
 
   private async createPeerConnection(peerId: string, initiator: boolean): Promise<void> {
+    const iceServers = [
+      ...(this.config.turnServers || []),
+      { urls: this.config.stunServers! }
+    ];
+
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: this.config.stunServers! },
-        ...(this.config.turnServers || [])
-      ]
+      iceServers,
+      iceTransportPolicy: this.config.turnServers && this.config.turnServers.length > 0 
+        ? 'relay' 
+        : 'all',
+      iceCandidatePoolSize: 0
     });
 
     this.peers.set(peerId, pc);
@@ -228,7 +234,9 @@ export class WebRTCTransport implements Transport {
 
     for (const channel of channels) {
       if (channel.readyState === 'open') {
-        channel.send(data);
+        // Garantiza un ArrayBuffer respaldado (evita SharedArrayBuffer en tipos TS)
+        const payload = new Uint8Array(data);
+        channel.send(payload);
       }
     }
   }
