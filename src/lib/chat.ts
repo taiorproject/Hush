@@ -15,6 +15,7 @@ export type ChatMessage = {
   text: string;
   timestamp: number;
   reinforced: boolean;
+  status?: 'sent' | 'delivered' | 'seen';
 };
 
 export type ChatSession = {
@@ -107,7 +108,8 @@ export async function createSession(roomKey: string, alias: string, hushId: stri
       alias: alias || 'anon',
       text: routedText,
       timestamp: Date.now(),
-      reinforced
+      reinforced,
+      status: 'sent'
     };
     yMessages.push([msg]);
   };

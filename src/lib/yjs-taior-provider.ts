@@ -7,6 +7,7 @@ export class TaiorProvider {
   private roomKey: string;
   private synced = false;
   private updateHandler: ((update: Uint8Array, origin: any) => void) | null = null;
+  private pending: Uint8Array[] = [];
 
   constructor(doc: Y.Doc, roomKey: string, transport: Transport) {
     this.doc = doc;
@@ -15,6 +16,11 @@ export class TaiorProvider {
 
     this.updateHandler = (update: Uint8Array, origin: any) => {
       if (origin !== this) {
+        if (!this.transport.isConnected()) {
+          this.pending.push(update);
+          return;
+        }
+
         this.transport.send(update).catch((err) => {
           console.error('Failed to send update:', err);
         });
@@ -36,6 +42,14 @@ export class TaiorProvider {
     
     const stateVector = Y.encodeStateVector(this.doc);
     await this.transport.send(stateVector);
+
+    if (this.pending.length) {
+      const toSend = [...this.pending];
+      this.pending = [];
+      for (const update of toSend) {
+        await this.transport.send(update);
+      }
+    }
   }
 
   disconnect(): void {

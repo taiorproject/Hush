@@ -221,10 +221,9 @@
 
 <div class="h-screen flex flex-col bg-app text-[var(--text)] overflow-hidden">
   <!-- Header compacto estilo Signal -->
-  <header class="flex-shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-4 py-3">
+  <header class="flex-shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-3 py-2.5 md:px-4 md:py-3">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="size-9 rounded-lg bg-[var(--accent)] text-white flex items-center justify-center font-bold text-base shadow-sm">H</div>
         <h1 class="text-lg font-semibold">Hush</h1>
       </div>
 
@@ -314,15 +313,44 @@
 
     <!-- Área de chat principal -->
     <main class="flex-1 flex flex-col bg-[var(--bg)] overflow-hidden">
+      {#if !$joined && $roomHistory.length > 0}
+        <!-- Lista de conversaciones estilo Telegram/Threema (solo móvil) -->
+        <div class="md:hidden flex-1 overflow-y-auto bg-[var(--surface)]">
+          <div class="divide-y divide-[var(--border)]">
+            {#each $roomHistory as room}
+              <button
+                type="button"
+                class="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-muted)] active:bg-[var(--surface-muted)] transition-colors"
+                on:click={() => { roomKey.set(room); join(); }}
+              >
+                <div class="size-12 rounded-full bg-[var(--accent)]/10 flex items-center justify-center font-semibold text-[var(--accent)] flex-shrink-0">
+                  {room[0]}
+                </div>
+                <div class="flex-1 text-left min-w-0">
+                  <div class="font-medium truncate">{room}</div>
+                  <div class="text-xs muted truncate">Sala P2P • Toca para abrir</div>
+                </div>
+                <div class="flex-shrink-0">
+                  <svg class="w-5 h-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       {#if $joined}
         <!-- Header del chat activo -->
-        <div class="flex-shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-4 py-3">
+        <div class="flex-shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-3 py-3 md:px-4">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <button
                 type="button"
                 class="md:hidden p-2 -ml-2 hover:bg-[var(--surface-muted)] rounded-lg"
-                on:click={openSheet}
+                on:click={() => joined.set(false)}
+                aria-label="Volver a conversaciones"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -339,23 +367,12 @@
                 </div>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="p-2 hover:bg-[var(--surface-muted)] rounded-lg transition-colors"
-                on:click={startRoom}
-                aria-label="Nueva sala"
-              >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-            </div>
+            <div class="flex items-center gap-2"></div>
           </div>
         </div>
 
         <!-- Mensajes -->
-        <div class="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+        <div class="flex-1 overflow-y-auto px-3 py-3 space-y-2 md:px-4 md:py-4">
           {#each $filteredMessages as message (message.id)}
             <div class={`flex ${message.senderId === $hushIdStore ? 'justify-end' : 'justify-start'}`}>
               <div class={`flex gap-2 max-w-[75%] ${message.senderId === $hushIdStore ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -370,10 +387,24 @@
                   {/if}
                   <div class={`rounded-2xl px-4 py-2 ${message.senderId === $hushIdStore ? 'bubble-self rounded-tr-sm' : 'bubble-other rounded-tl-sm'}`}>
                     <p class="text-[15px] leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
-                    <div class="flex items-center gap-2 mt-1">
-                      <span class="text-[11px] opacity-70">{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <div class="flex items-center gap-2 mt-1 text-[11px] opacity-75">
+                      <span>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       {#if message.reinforced}
-                        <span class="text-[10px] opacity-60">🔒</span>
+                        <span aria-label="Privacidad reforzada">🔒</span>
+                      {/if}
+                      {#if message.senderId === $hushIdStore}
+                        <span class="flex items-center gap-1">
+                          {#if message.status === 'seen'}
+                            <span class="text-blue-500">✓✓</span>
+                            <span class="sr-only">Visto</span>
+                          {:else if message.status === 'delivered'}
+                            <span class="text-[var(--muted)]">✓✓</span>
+                            <span class="sr-only">Entregado</span>
+                          {:else}
+                            <span class="text-[var(--muted)]">✓</span>
+                            <span class="sr-only">Enviado</span>
+                          {/if}
+                        </span>
                       {/if}
                     </div>
                   </div>
@@ -398,14 +429,18 @@
         </div>
 
         <!-- Input de mensaje -->
-        <form class="flex-shrink-0 bg-[var(--surface)] border-t border-[var(--border)] px-4 py-3" on:submit={send}>
+        <form class="flex-shrink-0 bg-[var(--surface)] border-t border-[var(--border)] px-3 py-3 md:px-4 safe-bottom" on:submit={send}>
           <div class="flex items-end gap-2">
-            <div class="flex-1 bg-[var(--surface-muted)] rounded-2xl border border-[var(--border)] px-4 py-2.5 focus-within:border-[var(--accent)] transition-colors">
+            <div class="flex-1 bg-[var(--surface-muted)] rounded-2xl px-4 h-12 md:h-12 flex items-center focus-within:ring-2 focus-within:ring-[var(--accent)] transition-colors">
               <input
                 name="message"
                 placeholder="Escribe un mensaje..."
                 required
-                class="w-full bg-transparent text-[15px] focus:outline-none"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                spellcheck="false"
+                class="w-full bg-transparent text-[15px] focus:outline-none border-0 ring-0 focus:ring-0"
               />
             </div>
             <button
@@ -427,10 +462,10 @@
             </div>
           {/if}
         </form>
-      {:else}
-        <!-- Estado vacío -->
+      {:else if $roomHistory.length === 0}
+        <!-- Estado vacío (solo si no hay historial) -->
         <div class="flex-1 flex items-center justify-center p-8">
-          <div class="text-center max-w-md">
+          <div class="text-center max-w-md px-4">
             <div class="size-20 rounded-full bg-[var(--surface)] border-2 border-[var(--border)] flex items-center justify-center mx-auto mb-4">
               <svg class="w-10 h-10 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -458,15 +493,17 @@
     </main>
   </div>
 
-  <button
-    class="fixed bottom-6 right-6 md:hidden rounded-full bg-[var(--accent)] text-white shadow-lg size-14 flex items-center justify-center"
-    on:click={openSheet}
-    aria-label="Nueva conversación"
-  >
-    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-    </svg>
-  </button>
+  {#if !$joined}
+    <button
+      class="fixed bottom-6 right-6 md:hidden rounded-full bg-[var(--accent)] text-white shadow-lg size-14 flex items-center justify-center"
+      on:click={openSheet}
+      aria-label="Nueva conversación"
+    >
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+      </svg>
+    </button>
+  {/if}
 
   {#if $showSheet}
     <div
@@ -477,7 +514,7 @@
       tabindex="-1"
     >
       <div
-        class="w-full max-w-md bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-4 shadow-2xl"
+        class="w-full max-w-md bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
         role="dialog"
         aria-modal="true"
       >
@@ -534,6 +571,35 @@
               <div class="text-xs muted mt-0.5">Mayor protección, menor velocidad</div>
             </div>
             <Badge color={$reinforced ? 'green' : 'dark'} class="text-xs">{$reinforced ? 'On' : 'Off'}</Badge>
+          </div>
+
+          <div class="space-y-2">
+            <div class="text-xs uppercase tracking-[0.2em] muted">Historial</div>
+            {#if $roomHistory.length === 0}
+              <div class="text-xs muted">Sin salas recientes.</div>
+            {:else}
+              <div class="flex flex-wrap gap-2">
+                {#each $roomHistory as r}
+                  <button
+                    type="button"
+                    class="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] text-sm"
+                    on:click={() => { roomKey.set(r); join(); closeSheet(); }}
+                  >
+                    {r}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          <div class="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-xs flex items-center gap-2">
+            {#if $connected}
+              <span class="size-2 rounded-full bg-green-500"></span>
+              <span class="text-green-600 dark:text-green-400 font-medium">Conectado</span>
+            {:else}
+              <Spinner size="3" />
+              <span class="muted">Conectando...</span>
+            {/if}
           </div>
         </div>
 

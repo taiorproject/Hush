@@ -155,6 +155,10 @@ body {
   color: var(--muted);
 }
 
+.safe-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
