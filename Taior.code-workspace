@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../aorp-core"
+		},
+		{
+			"path": "../aorp-spec"
+		},
+		{
+			"path": "../libtaior"
+		},
+		{
+			"path": "../taior-protocol"
+		},
+		{
+			"path": "../taior-URI"
+		}
+	],
+	"settings": {}
+}

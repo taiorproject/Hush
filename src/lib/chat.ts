@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 import { createTaiorClient, type TaiorRouteMode } from './taior';
 import { BroadcastChannelTransport } from './broadcast-transport';
+import { WebRTCTransport } from './webrtc-transport';
 import { TaiorProvider } from './yjs-taior-provider';
 import type { Transport } from './transport';
 
@@ -35,13 +36,21 @@ export async function createSession(roomKey: string, alias: string, hushId: stri
   const yMessages = ydoc.getArray<ChatMessage>('messages');
   const messages = writable<ChatMessage[]>([]);
   const connected = writable(false);
-  const taior = await createTaiorClient(false);
+  const isProd = import.meta.env.PROD;
+  const taior = await createTaiorClient(isProd);
   const peerId = uuidv4();
-  
-  const transport: Transport = new BroadcastChannelTransport({
-    roomKey,
-    peerId
-  });
+  const signalingServer = import.meta.env.VITE_SIGNALING_URL || 'wss://hush-signal.railway.app';
+
+  const transport: Transport = isProd
+    ? new WebRTCTransport({
+        roomKey,
+        peerId,
+        signalingServer
+      })
+    : new BroadcastChannelTransport({
+        roomKey,
+        peerId
+      });
   
   const provider = new TaiorProvider(ydoc, roomKey, transport);
 
