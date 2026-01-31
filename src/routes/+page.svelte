@@ -18,9 +18,17 @@
   const roomHistory = writable<string[]>([]);
   const showSheet = writable(false);
   const joined = writable(false);
+  const showProfile = writable(false);
+  const searchQuery = writable('');
+  const recoveryKey = writable('');
 
   const messages = writable<ChatMessage[]>([]);
   const connected = writable(false);
+  const filteredMessages = derived([messages, searchQuery], ([$m, $q]) => {
+    const term = $q.trim().toLowerCase();
+    if (!term) return $m;
+    return $m.filter((msg) => msg.text.toLowerCase().includes(term) || msg.alias.toLowerCase().includes(term));
+  });
 
   let session: ChatSession | null = null;
 
@@ -75,6 +83,17 @@
     handleThemeChange(target.value as 'light' | 'dark' | 'system');
   };
 
+  const ensureRecoveryKey = () => {
+    const key = 'hush-recovery-key';
+    const existing = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+    const value = existing || crypto.randomUUID();
+    if (typeof localStorage !== 'undefined' && !existing) {
+      localStorage.setItem(key, value);
+    }
+    recoveryKey.set(value);
+    return value;
+  };
+
   const loadRoomHistory = () => {
     if (typeof localStorage === 'undefined') return;
     try {
@@ -108,6 +127,7 @@
   onMount(async () => {
     const hid = ensureHushId();
     loadRoomHistory();
+    ensureRecoveryKey();
     const s = await createSession('LOBBY', 'system', hid);
     session = s;
     bindSession(s);
@@ -163,6 +183,30 @@
 
   const openSheet = () => showSheet.set(true);
   const closeSheet = () => showSheet.set(false);
+  const openProfile = () => showProfile.set(true);
+  const closeProfile = () => showProfile.set(false);
+
+  const copyText = async (text: string) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard?.writeText(text);
+    } catch (err) {
+      console.warn('No se pudo copiar', err);
+    }
+  };
+
+  const shareText = async (text: string) => {
+    if (!text) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ text });
+        return;
+      } catch (e) {
+        console.warn('Share cancelado', e);
+      }
+    }
+    copyText(text);
+  };
 
   onDestroy(() => {
     if (session) {
@@ -178,22 +222,49 @@
 <div class="min-h-screen bg-app text-[var(--text)]">
   <div class="mx-auto max-w-5xl px-4 py-10 space-y-6">
     <header class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <div>
-        <p class="uppercase tracking-[0.3em] text-xs muted">Hush Messenger</p>
-        <h1 class="text-3xl md:text-4xl font-semibold leading-tight">Conversaciones privadas, efímeras y directas</h1>
-        <p class="text-sm md:text-base muted mt-1">Comparte un room key de 10 caracteres. Sin cuentas, sin dueño.</p>
+      <div class="flex items-center gap-3">
+        <div class="size-11 rounded-xl bg-[var(--accent)] text-white flex items-center justify-center font-semibold text-lg shadow-sm">H</div>
+        <div>
+          <div class="text-lg font-semibold leading-tight">Hush</div>
+          <div class="flex gap-2 text-xs muted mt-1">
+            <span class="pill px-2 py-1 rounded-full">P2P</span>
+            <span class="pill px-2 py-1 rounded-full">Privado</span>
+            <span class="pill px-2 py-1 rounded-full">WASM</span>
+          </div>
+        </div>
       </div>
-      <div class="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] rounded-full px-3 py-2 shadow-sm">
-        <span class="text-sm muted">Tema</span>
-        <select
-          class="text-sm bg-transparent focus:outline-none"
-          bind:value={$theme}
-          on:change={handleThemeSelect}
+
+      <div class="flex flex-col md:flex-row gap-3 md:items-center">
+        <div class="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] rounded-full px-3 py-2 shadow-sm min-w-[220px]">
+          <svg class="w-4 h-4 muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" /></svg>
+          <input
+            type="search"
+            placeholder="Buscar en chat"
+            class="bg-transparent text-sm focus:outline-none w-full"
+            bind:value={$searchQuery}
+          />
+        </div>
+        <div class="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] rounded-full px-3 py-2 shadow-sm">
+          <span class="text-sm muted">Tema</span>
+          <select
+            class="text-sm bg-transparent focus:outline-none"
+            bind:value={$theme}
+            on:change={handleThemeSelect}
+          >
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="system">System</option>
+          </select>
+        </div>
+        <button
+          type="button"
+          class="relative size-11 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-sm font-semibold"
+          on:click={openProfile}
+          aria-label="Abrir perfil"
         >
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-          <option value="system">System</option>
-        </select>
+          {$alias ? $alias[0]?.toUpperCase() : 'P'}
+          <span class="absolute -right-1 -top-1 size-2 rounded-full bg-[var(--accent)]"></span>
+        </button>
       </div>
     </header>
 
@@ -304,7 +375,7 @@
         </div>
 
         <div class="flex-1 chat-bg space-y-3 overflow-y-auto p-5" style="max-height: 60vh;">
-          {#each $messages as message (message.id)}
+          {#each $filteredMessages as message (message.id)}
             <div class={`flex ${message.senderId === $hushIdStore ? 'justify-end' : 'justify-start'}`}>
               <div class={`max-w-[78%] rounded-2xl px-3 py-2 shadow-sm ${message.senderId === $hushIdStore ? 'bubble-self' : 'bubble-other'}`}>
                 <div class="flex items-center gap-2 bubble-meta">
@@ -319,7 +390,7 @@
             </div>
           {/each}
 
-          {#if $messages.length === 0}
+          {#if $filteredMessages.length === 0}
             <div class="text-center muted text-sm py-6">Sin mensajes aún. Envía el primero.</div>
           {/if}
         </div>
@@ -417,6 +488,69 @@
         <div class="flex gap-2">
           <Button type="button" class="flex-1" color="light" on:click={startRoom}>Generar</Button>
           <Button type="button" class="flex-1" color="blue" on:click={() => { join(); closeSheet(); }}>Unirse / Cambiar</Button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if $showProfile}
+    <div class="fixed inset-0 bg-black/50 flex items-center justify-center px-4" role="dialog" aria-modal="true">
+      <div class="w-full max-w-2xl bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-4 shadow-xl">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-sm uppercase tracking-[0.2em] muted">Perfil</div>
+            <div class="text-xl font-semibold">Ajustes y cuenta</div>
+          </div>
+          <button class="text-sm text-[var(--muted)]" on:click={closeProfile}>Cerrar</button>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="space-y-3 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] p-3">
+            <div class="text-xs uppercase tracking-[0.2em] muted">ID de cuenta</div>
+            <div class="font-mono text-sm break-all">{$hushIdStore}</div>
+            <div class="flex gap-2">
+              <Button color="light" on:click={() => copyText($hushIdStore)}>Copiar</Button>
+              <Button color="blue" on:click={() => shareText(`Hola! Estoy usando Hush para chatear con total privacidad y seguridad. Chatea conmigo! Mi ID de cuenta es ${$hushIdStore}`)}>Compartir</Button>
+            </div>
+            <div class="space-y-1 text-xs muted">
+              <div>Invita a un amigo:</div>
+              <div class="rounded-lg border border-[var(--border)] p-2 bg-[var(--surface)] text-[var(--text)]">
+                Hola! Estoy usando Hush para chatear con total privacidad y seguridad. Chatea conmigo! Mi ID de cuenta es {$hushIdStore}
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-3 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] p-3">
+            <div class="text-xs uppercase tracking-[0.2em] muted">Clave de recuperación</div>
+            <div class="font-mono text-sm break-all">{$recoveryKey}</div>
+            <div class="text-xs muted">Guárdala para reinstalar en otro dispositivo.</div>
+            <Button color="light" on:click={() => copyText($recoveryKey)}>Copiar clave</Button>
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4">
+          <div class="space-y-2 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] p-3">
+            <div class="text-xs uppercase tracking-[0.2em] muted">QR</div>
+            <div class="text-xs muted">Escanea para agregar contacto. (Placeholder)</div>
+            <div class="aspect-square rounded-lg border border-[var(--border)] bg-[var(--surface)] flex items-center justify-center text-xs muted">
+              QR pronto
+            </div>
+          </div>
+
+          <div class="space-y-2 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] p-3">
+            <div class="text-xs uppercase tracking-[0.2em] muted">Ruta (libtaior)</div>
+            <p class="text-sm muted">Hush oculta tu IP enroutando tráfico P2P vía libtaior (repos: libtaior, taior-protocol, taior-URI, aorp-core, aorp-spec). No hay servidores de datos, solo señalización.</p>
+            <div class="space-y-1 text-xs">
+              <div>• WebRTC + Taior: canal cifrado extremo a extremo.</div>
+              <div>• No logging: sin retención de mensajes.</div>
+            </div>
+            <Button color="light" on:click={() => shareText('Ruta Taior: tu IP se oculta vía libtaior con WebRTC P2P, sin servidores de datos.')}>Compartir ruta</Button>
+          </div>
+        </div>
+
+        <div class="space-y-2 rounded-xl bg-[var(--surface-muted)] border border-[var(--border)] p-3">
+          <div class="text-xs uppercase tracking-[0.2em] muted">Taior Network</div>
+          <p class="text-sm muted">Taior es la red anónima que enruta paquetes sin revelar IP. Usa WASM (libtaior) y CRDT (Yjs) para chats locales-first. Señalización solo para handshake, sin contenido.</p>
         </div>
       </div>
     </div>
