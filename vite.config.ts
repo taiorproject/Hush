@@ -3,7 +3,10 @@ import type { UserConfig } from 'vite';
 
 const config: UserConfig = {
   plugins: [sveltekit()],
-  assetsInclude: ['**/*.wasm']
+  assetsInclude: ['**/*.wasm'],
+  optimizeDeps: {
+    exclude: ['@taiorproject/taior']
+  }
 };
 
 export default config;

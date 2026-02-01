@@ -13,8 +13,8 @@
     "build:wasm": "cd ../libtaior && ./build-wasm.sh && cd ../Hush && npm install ../libtaior/pkg"
   },
   "dependencies": {
+    "@taiorproject/taior": "0.1.0",
     "flowbite-svelte": "^0.44.24",
-    "taior": "file:../libtaior/pkg",
     "uuid": "^9.0.1",
     "y-webrtc": "^10.3.0",
     "yjs": "^13.6.1"

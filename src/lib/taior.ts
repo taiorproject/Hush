@@ -16,9 +16,23 @@ async function loadWasmModule() {
   if (wasmModule) return wasmModule;
   
   try {
-    const module = await import('taior');
-    wasmModule = module;
-    return module;
+    const wasmUrl = await import('@taiorproject/taior/taior_bg.wasm?url');
+    const wasmInstance = await WebAssembly.instantiateStreaming(
+      fetch(wasmUrl.default),
+      {
+        './taior_bg.js': await import('@taiorproject/taior/taior_bg.js')
+      }
+    );
+    
+    const bindings = await import('@taiorproject/taior/taior_bg.js');
+    bindings.__wbg_set_wasm(wasmInstance.instance.exports);
+    
+    if (typeof wasmInstance.instance.exports.__wbindgen_start === 'function') {
+      (wasmInstance.instance.exports.__wbindgen_start as () => void)();
+    }
+    
+    wasmModule = { TaiorWasm: bindings.TaiorWasm };
+    return wasmModule;
   } catch (err) {
     throw new Error(
       'libtaior WASM no disponible. Hush requiere libtaior para funcionar de forma segura.\n\n' +
