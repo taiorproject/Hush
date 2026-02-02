@@ -8,6 +8,7 @@ export type TaiorClient = {
   disconnect: () => void;
   address: () => string;
   enableCoverTraffic: (enabled: boolean, ratio: number) => void;
+  decideNextHop: (candidates: string[], hops: number) => string;
 };
 
 let wasmModule: any = null;
@@ -133,5 +134,12 @@ function createTaiorWasm(wasm: any): TaiorClient {
     }
   };
 
-  return { status, send, disconnect, address, enableCoverTraffic };
+  const decideNextHop = (candidates: string[], hops: number): string => {
+    if (!taiorInstance || typeof taiorInstance.decide_next_hop !== 'function') {
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+    return taiorInstance.decide_next_hop(candidates, hops);
+  };
+
+  return { status, send, disconnect, address, enableCoverTraffic, decideNextHop };
 }

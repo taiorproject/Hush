@@ -1,9 +1,11 @@
+import { createTaiorClient, type TaiorClient } from './taior';
 import type { Transport, TransportConfig } from './transport';
 
 interface AORPNode {
   id: string;
   address: string;
   publicKey: Uint8Array;
+  cryptoKey?: CryptoKey; // Cached imported key
   lastSeen: number;
 }
 
@@ -29,7 +31,8 @@ export class AORPTransport implements Transport {
 
   private circuits: Map<string, Circuit> = new Map();
   private knownNodes: Map<string, AORPNode> = new Map();
-  private taiorWasm: any = null;
+  private taiorWasm: TaiorClient | null = null;
+  private keyPair: CryptoKeyPair | null = null;
 
   private coverTrafficEnabled = true;
   private coverTrafficRate = 2.0;
@@ -50,6 +53,7 @@ export class AORPTransport implements Transport {
 
   async connect(roomKey: string): Promise<void> {
     await this.initializeTaiorWasm();
+    await this.generateKeyPair();
 
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.config.signalingServer!);
@@ -90,10 +94,25 @@ export class AORPTransport implements Transport {
 
   private async initializeTaiorWasm(): Promise<void> {
     try {
-      this.taiorWasm = null;
+      this.taiorWasm = await createTaiorClient();
+      console.log('✅ AORP: Taior WASM inicializado correctamente');
     } catch (error) {
-      console.warn('Taior WASM no disponible, usando implementación JS:', error);
+      console.error('❌ AORP: Fallo crítico al cargar WASM. La privacidad se verá comprometida.', error);
+      // Fallback intent (if possible) or just log error
+      this.taiorWasm = null;
     }
+  }
+
+  private async generateKeyPair(): Promise<void> {
+    this.keyPair = await crypto.subtle.generateKey(
+      {
+        name: 'ECDH',
+        namedCurve: 'P-256',
+      },
+      true,
+      ['deriveKey', 'deriveBits']
+    );
+    console.log('🔑 AORP: Claves de identidad generadas (P-256)');
   }
 
   private async discoverNodes(peerIds: string[]): Promise<void> {
@@ -128,8 +147,9 @@ export class AORPTransport implements Transport {
   }
 
   private async buildCircuit(targetHops: number): Promise<Circuit | null> {
+    const isZeroKey = (k: Uint8Array) => k.length === 32 && k.every(b => b === 0);
     const availableNodes = Array.from(this.knownNodes.values())
-      .filter(node => Date.now() - node.lastSeen < 60000);
+      .filter(node => Date.now() - node.lastSeen < 60000 && !isZeroKey(node.publicKey));
 
     if (availableNodes.length < targetHops) {
       return null;
@@ -145,9 +165,9 @@ export class AORPTransport implements Transport {
 
       let selected: AORPNode;
 
-      if (this.taiorWasm && this.taiorWasm.decide_next_hop) {
+      if (this.taiorWasm && this.taiorWasm.decideNextHop) {
         const candidateIds = candidates.map(c => c.id);
-        const nextHopId = this.taiorWasm.decide_next_hop(candidateIds, targetHops - i);
+        const nextHopId = this.taiorWasm.decideNextHop(candidateIds, targetHops - i);
         selected = candidates.find(c => c.id === nextHopId) || candidates[0];
       } else {
         selected = candidates[Math.floor(Math.random() * candidates.length)];
@@ -252,16 +272,22 @@ export class AORPTransport implements Transport {
   private setupDataChannel(peerId: string, channel: RTCDataChannel): void {
     this.dataChannels.set(peerId, channel);
 
-    channel.onopen = () => {
+    channel.onopen = async () => {
       const node = this.knownNodes.get(peerId);
       if (node) {
         node.lastSeen = Date.now();
       }
+      // Send Handshake with our Public Key
+      await this.sendHandshake(channel);
     };
 
-    channel.onmessage = (event) => {
+    channel.onmessage = async (event) => {
       const data = new Uint8Array(event.data);
-      this.handleOnionPacket(data, peerId);
+      if (data[0] === 0xBB) {
+        await this.handleHandshake(data, peerId);
+      } else {
+        this.handleOnionPacket(data, peerId);
+      }
     };
 
     channel.onerror = (error) => {
@@ -434,28 +460,90 @@ export class AORPTransport implements Transport {
   }
 
   private async encryptLayer(data: Uint8Array, node: AORPNode): Promise<Uint8Array> {
-    const keyData = new Uint8Array(node.publicKey);
-    const key = await crypto.subtle.importKey(
+    if (!node.publicKey || node.publicKey.every(b => b === 0)) {
+      // Still try to import if it's "valid" but check if we have received a real key via handshake
+      // If we don't have a real key, this is insecure.
+      // For now, allow it but warn, or rely on the fact that handshake updates it.
+    }
+
+    // Import node's public key if not cached
+    let nodePubKey = node.cryptoKey;
+    if (!nodePubKey) {
+      try {
+        nodePubKey = await crypto.subtle.importKey(
+          'raw',
+          node.publicKey,
+          { name: 'ECDH', namedCurve: 'P-256' },
+          false,
+          []
+        );
+        node.cryptoKey = nodePubKey;
+      } catch (e) {
+        // Fallback for empty/invalid keys to prevent crash, but this effectively breaks encryption security
+        // In a real fix, we should throw here if key is invalid.
+        // For this refactor, let's assume keys are exchanged.
+        console.error(`Invalid key for node ${node.id}`, e);
+        throw new Error(`Cannot encrypt for node ${node.id}: Invalid Public Key`);
+      }
+    }
+
+    // 1. Generate Ephemeral Keypair
+    const ephemeralKeyPair = await crypto.subtle.generateKey(
+      { name: 'ECDH', namedCurve: 'P-256' },
+      true,
+      ['deriveBits']
+    );
+
+    // 2. Derive Shared Secret (Ephemeral Priv + Node Pub)
+    const sharedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'ECDH',
+        public: nodePubKey
+      },
+      ephemeralKeyPair.privateKey,
+      256
+    );
+
+    // 3. Import Shared Secret as AES Key
+    const aesKey = await crypto.subtle.importKey(
       'raw',
-      keyData.buffer,
+      sharedBits,
       { name: 'AES-GCM', length: 256 },
       false,
       ['encrypt']
     );
 
+    // 4. Encrypt Data
     const iv = new Uint8Array(12);
-    crypto.getRandomValues(iv);
+    crypto.getRandomValues(iv); // Unique IV per layer
 
-    const dataBuffer = new Uint8Array(data).buffer;
-    const encrypted = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv.buffer },
-      key,
-      dataBuffer
+    const encryptedContent = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv },
+      aesKey,
+      data as unknown as BufferSource
     );
 
-    const result = new Uint8Array(iv.length + encrypted.byteLength);
-    result.set(iv);
-    result.set(new Uint8Array(encrypted), iv.length);
+    // 5. Serialize Ephemeral Public Key
+    const ephemeralPubRaw = await crypto.subtle.exportKey('raw', ephemeralKeyPair.publicKey);
+    const ephemeralPubBytes = new Uint8Array(ephemeralPubRaw);
+
+    // Structure: [EphKeyLen 1b] [EphKey bytes] [IV 12b] [EncryptedContent]
+    // P-256 raw key is usually 65 bytes. We'll dynamic size it or fixing it is safer.
+    // Let's use 1 byte for key len just in case.
+
+    const result = new Uint8Array(1 + ephemeralPubBytes.length + 12 + encryptedContent.byteLength);
+    let offset = 0;
+
+    result[offset] = ephemeralPubBytes.length;
+    offset++;
+
+    result.set(ephemeralPubBytes, offset);
+    offset += ephemeralPubBytes.length;
+
+    result.set(iv, offset);
+    offset += 12;
+
+    result.set(new Uint8Array(encryptedContent), offset);
 
     return result;
   }
@@ -481,36 +569,117 @@ export class AORPTransport implements Transport {
   }
 
   private async decryptLayer(data: Uint8Array): Promise<Uint8Array> {
-    // Extract IV (first 12 bytes) and encrypted data
-    if (data.length < 12) {
-      throw new Error('Invalid onion packet: too short');
+    // Structure: [EphKeyLen 1b] [EphKey bytes] [IV 12b] [EncryptedContent]
+
+    if (data.length < 1 + 65 + 12) { // minimal sanity check
+      throw new Error('Invalid onion packet: too short for header');
     }
 
-    const iv = data.slice(0, 12);
-    const encryptedData = data.slice(12);
+    let offset = 0;
+    const keyLen = data[offset];
+    offset++;
 
-    // Use our node's key (derived from peerId)
-    const keyMaterial = new TextEncoder().encode(this.config.peerId);
-    const keyHash = await crypto.subtle.digest('SHA-256', keyMaterial);
+    if (keyLen > 100 || offset + keyLen > data.length) {
+      throw new Error('Invalid ephemeral key length');
+    }
 
-    const key = await crypto.subtle.importKey(
+    const ephKeyBytes = data.slice(offset, offset + keyLen);
+    offset += keyLen;
+
+    const iv = data.slice(offset, offset + 12);
+    offset += 12;
+
+    const encryptedData = data.slice(offset);
+
+    if (!this.keyPair) {
+      throw new Error('Node Identity Key not initialized');
+    }
+
+    // 1. Import Ephemeral Public Key
+    const ephPubKey = await crypto.subtle.importKey(
       'raw',
-      keyHash,
+      ephKeyBytes,
+      { name: 'ECDH', namedCurve: 'P-256' },
+      false,
+      []
+    );
+
+    // 2. Derive Shared Secret (My Priv + Eph Pub)
+    const sharedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'ECDH',
+        public: ephPubKey
+      },
+      this.keyPair.privateKey,
+      256
+    );
+
+    // 3. Import as AES Key
+    const aesKey = await crypto.subtle.importKey(
+      'raw',
+      sharedBits,
       { name: 'AES-GCM', length: 256 },
       false,
       ['decrypt']
     );
 
+    // 4. Decrypt
     try {
       const decrypted = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv },
-        key,
-        encryptedData
+        aesKey,
+        encryptedData as unknown as BufferSource
       );
 
       return new Uint8Array(decrypted);
     } catch (err) {
       throw new Error(`Failed to decrypt onion layer: ${err}`);
+    }
+  }
+
+  // Handshake Protocol
+  private async sendHandshake(channel: RTCDataChannel): Promise<void> {
+    if (!this.keyPair || channel.readyState !== 'open') return;
+
+    try {
+      const pubKeyRaw = await crypto.subtle.exportKey('raw', this.keyPair.publicKey);
+      const pubKeyBytes = new Uint8Array(pubKeyRaw);
+
+      const packet = new Uint8Array(1 + pubKeyBytes.length);
+      packet[0] = 0xBB; // Magic for Handshake
+      packet.set(pubKeyBytes, 1);
+
+      channel.send(packet);
+      console.log('🤝 AORP: Public Key Handshake enviado');
+    } catch (e) {
+      console.error('Error enviando handshake:', e);
+    }
+  }
+
+  private async handleHandshake(data: Uint8Array, peerId: string): Promise<void> {
+    try {
+      // data[0] is 0xBB
+      const keyBytes = data.slice(1);
+
+      // Update known node
+      const node = this.knownNodes.get(peerId);
+      if (node) {
+        node.publicKey = keyBytes;
+        // Invalidate cached cryptoKey so it regenerates next time
+        node.cryptoKey = undefined;
+        console.log(`✅ AORP: Handshake recibido de ${peerId}. Clave pública actualizada.`);
+
+        // Try to establish circuit now that we have a valid node
+        if (this.circuits.size === 0) {
+          await this.refreshCircuits();
+        }
+      } else {
+        // Should we assume we know them? Maybe update if discoverNodes failed?
+        // Ideally discoverNodes runs first.
+        console.warn(`Handshake de nodo desconocido: ${peerId}`);
+      }
+    } catch (e) {
+      console.error('Error procesando handshake:', e);
     }
   }
 
