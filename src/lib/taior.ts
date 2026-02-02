@@ -14,7 +14,7 @@ let wasmModule: any = null;
 
 async function loadWasmModule() {
   if (wasmModule) return wasmModule;
-  
+
   try {
     const wasmUrl = await import('@taiorproject/taior/taior_bg.wasm?url');
     const wasmInstance = await WebAssembly.instantiateStreaming(
@@ -23,14 +23,14 @@ async function loadWasmModule() {
         './taior_bg.js': await import('@taiorproject/taior/taior_bg.js')
       }
     );
-    
+
     const bindings = await import('@taiorproject/taior/taior_bg.js');
     bindings.__wbg_set_wasm(wasmInstance.instance.exports);
-    
+
     if (typeof wasmInstance.instance.exports.__wbindgen_start === 'function') {
       (wasmInstance.instance.exports.__wbindgen_start as () => void)();
     }
-    
+
     wasmModule = { TaiorWasm: bindings.TaiorWasm };
     return wasmModule;
   } catch (err) {
@@ -52,10 +52,10 @@ export async function createTaiorClient(): Promise<TaiorClient> {
 
 function createTaiorWasm(wasm: any): TaiorClient {
   const status = writable<'disconnected' | 'connecting' | 'connected'>('connecting');
-  
+
   let taiorInstance: any = null;
-  
-  const ready = new Promise<void>((resolve) => {
+
+  const ready = new Promise<void>((resolve, reject) => {
     setTimeout(() => {
       try {
         taiorInstance = new wasm.TaiorWasm();
@@ -64,23 +64,51 @@ function createTaiorWasm(wasm: any): TaiorClient {
       } catch (err) {
         console.error('Failed to initialize Taior WASM:', err);
         status.set('disconnected');
+        reject(new Error(
+          'CRITICAL: libtaior WASM initialization failed. ' +
+          'Cannot proceed without AORP privacy guarantees. ' +
+          `Error: ${err}`
+        ));
       }
     }, 100);
   });
 
   const send = async (payload: Uint8Array, mode: TaiorRouteMode) => {
     await ready;
+
     if (!taiorInstance) {
-      throw new Error('Taior not initialized');
+      throw new Error(
+        'CRITICAL: Taior not initialized. ' +
+        'Cannot send data without AORP privacy protection.'
+      );
     }
-    
+
     const modeStr = mode === 'reinforced' ? 'mix' : mode;
+
+    // NEVER return plaintext on failure - throw instead
     try {
       const result = taiorInstance.send(payload, modeStr);
-      return new Uint8Array(result);
+
+      // Verify WASM actually processed the data
+      if (!result) {
+        throw new Error('WASM send returned null/undefined');
+      }
+
+      const processed = new Uint8Array(result);
+
+      // Sanity check: WASM should transform the data
+      // (at minimum, add AORP routing headers)
+      if (processed.length === 0) {
+        throw new Error('WASM send returned empty result');
+      }
+
+      return processed;
     } catch (err) {
-      console.error('Taior send error:', err);
-      return payload;
+      // CRITICAL: Never fail silently and return plaintext
+      throw new Error(
+        'CRITICAL: AORP routing failed. Message NOT sent to protect privacy. ' +
+        `Original error: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   };
 

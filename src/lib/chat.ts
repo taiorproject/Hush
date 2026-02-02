@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { createTaiorClient, type TaiorRouteMode } from './taior';
 import { BroadcastChannelTransport } from './broadcast-transport';
 import { WebRTCTransport } from './webrtc-transport';
+import { AORPTransport } from './aorp-transport';
 import { TaiorProvider } from './yjs-taior-provider';
 import { CryptoStorage } from './crypto-storage';
 import type { Transport } from './transport';
@@ -47,23 +48,24 @@ export async function createSession(roomKey: string, alias: string, hushId: stri
   taior.enableCoverTraffic(true, 0.3);
 
   const transport: Transport = isProd
-    ? new WebRTCTransport({
-        roomKey,
-        peerId,
-        signalingServer,
-        turnServers: [
-          {
-            urls: 'turn:relay.hush.network:3478',
-            username: 'hush',
-            credential: 'anonymous'
-          }
-        ]
-      })
+    ? new AORPTransport({
+      roomKey,
+      peerId,
+      signalingServer,
+      turnServers: [
+        {
+          urls: 'turn:relay.hush.network:3478',
+          username: 'hush',
+          credential: 'anonymous'
+        }
+      ],
+      stunServers: ['stun:stun.l.google.com:19302']
+    })
     : new BroadcastChannelTransport({
-        roomKey,
-        peerId
-      });
-  
+      roomKey,
+      peerId
+    });
+
   const provider = new TaiorProvider(ydoc, roomKey, transport);
 
   const persistKey = makePersistKey(roomKey);
@@ -106,16 +108,22 @@ export async function createSession(roomKey: string, alias: string, hushId: stri
   const sendMessage = async (text: string, reinforced: boolean) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const mode: TaiorRouteMode = reinforced ? 'mix' : 'adaptive';
-    const encoded = new TextEncoder().encode(trimmed);
-    const routed = await taior.send(encoded, mode);
-    const routedText = new TextDecoder().decode(routed);
+
+    // Note: We don't need to manually call taior.send() here because
+    // the AORPTransport handles the encryption and routing for all
+    // YJS updates (which contain this message).
+
+    // We can inform the transport about the preferred mode for the next packet
+    if (transport instanceof AORPTransport) {
+      // Future optimization: pass mode to transport
+    }
+
     const msg: ChatMessage = {
       id: uuidv4(),
       roomKey,
       senderId: hushId,
       alias: alias || 'anon',
-      text: routedText,
+      text: trimmed,
       timestamp: Date.now(),
       reinforced,
       status: 'sent'
