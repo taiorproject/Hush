@@ -1,5 +1,6 @@
 import { createTaiorClient, type TaiorClient } from './taior';
 import type { Transport, TransportConfig } from './transport';
+import { SimpleDHT, type DHTNode } from './dht';
 
 interface AORPNode {
   id: string;
@@ -42,6 +43,10 @@ export class AORPTransport implements Transport {
   private maxHops = 5;
   private circuitTTL = 600000;
   private circuitRefreshInterval = 300000;
+  private pendingHandshakes: Set<string> = new Set();
+  private handshakeTimeout = 5000;
+  private dht: SimpleDHT | null = null;
+  private useDHT = false;
 
   constructor(config: TransportConfig) {
     this.config = {
@@ -49,12 +54,52 @@ export class AORPTransport implements Transport {
       signalingServer: config.signalingServer || 'ws://localhost:8080',
       stunServers: config.stunServers || ['stun:stun.l.google.com:19302']
     };
+    
+    this.useDHT = config.useDHT ?? false;
+    if (this.useDHT) {
+      this.dht = new SimpleDHT({ nodeId: config.peerId });
+      console.log('🔍 AORP: DHT habilitado para descubrimiento de peers');
+    }
   }
 
   async connect(roomKey: string): Promise<void> {
     await this.initializeTaiorWasm();
     await this.generateKeyPair();
 
+    if (this.useDHT && this.dht) {
+      return this.connectViaDHT(roomKey);
+    }
+
+    return this.connectViaSignaling(roomKey);
+  }
+
+  private async connectViaDHT(roomKey: string): Promise<void> {
+    if (!this.dht) {
+      throw new Error('DHT no inicializado');
+    }
+
+    console.log('🔍 AORP: Conectando via DHT (sin signaling centralizado)');
+    
+    const bootstrapNodes = [
+      'wss://relay1.hush.network',
+      'wss://relay2.hush.network',
+      'wss://relay3.hush.network'
+    ];
+
+    for (const node of bootstrapNodes) {
+      this.dht.addBootstrapNode(node);
+    }
+
+    await this.dht.bootstrap();
+    
+    const discoveredNodes = this.dht.getAllNodes();
+    await this.discoverNodes(discoveredNodes.map(n => n.id));
+    await this.buildInitialCircuits();
+    this.startCoverTraffic();
+    this.connected = true;
+  }
+
+  private async connectViaSignaling(roomKey: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.config.signalingServer!);
 
@@ -73,6 +118,17 @@ export class AORPTransport implements Transport {
 
         if (msg.type === 'peer-list') {
           await this.discoverNodes(msg.data.peers || []);
+          
+          if (this.dht) {
+            for (const peerId of msg.data.peers || []) {
+              this.dht.addNode({
+                id: peerId,
+                address: `peer://${peerId}`,
+                lastSeen: Date.now()
+              });
+            }
+          }
+          
           await this.buildInitialCircuits();
           this.startCoverTraffic();
           this.connected = true;
@@ -95,11 +151,19 @@ export class AORPTransport implements Transport {
   private async initializeTaiorWasm(): Promise<void> {
     try {
       this.taiorWasm = await createTaiorClient();
-      console.log('✅ AORP: Taior WASM inicializado correctamente');
+      console.log('✅ AORP: libtaior WASM inicializado correctamente');
+      
+      if (!this.taiorWasm || typeof this.taiorWasm.send !== 'function') {
+        throw new Error('libtaior WASM no exporta método send() requerido');
+      }
     } catch (error) {
-      console.error('❌ AORP: Fallo crítico al cargar WASM. La privacidad se verá comprometida.', error);
-      // Fallback intent (if possible) or just log error
-      this.taiorWasm = null;
+      console.error('❌ AORP: Fallo crítico al cargar libtaior WASM.', error);
+      throw new Error(
+        'CRITICAL: No se puede inicializar sin libtaior WASM. ' +
+        'AORP requiere libtaior para cifrado onion y routing anónimo. ' +
+        'Sin libtaior, NO hay privacidad real. ' +
+        `Error: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -121,9 +185,10 @@ export class AORPTransport implements Transport {
         this.knownNodes.set(peerId, {
           id: peerId,
           address: `peer://${peerId}`,
-          publicKey: new Uint8Array(32),
+          publicKey: new Uint8Array(0),
           lastSeen: Date.now()
         });
+        this.pendingHandshakes.add(peerId);
 
         await this.createPeerConnection(peerId, false);
       }
@@ -131,6 +196,8 @@ export class AORPTransport implements Transport {
   }
 
   private async buildInitialCircuits(): Promise<void> {
+    await this.waitForHandshakes();
+
     const nodeIds = Array.from(this.knownNodes.keys());
 
     if (nodeIds.length < this.minHops) {
@@ -141,15 +208,32 @@ export class AORPTransport implements Transport {
     const circuit = await this.buildCircuit(this.minHops);
     if (circuit) {
       this.circuits.set(circuit.id.toString(), circuit);
+      console.log(`🔐 AORP: Circuito creado con ${circuit.nodes.length} hops`);
     }
 
     setInterval(() => this.refreshCircuits(), this.circuitRefreshInterval);
   }
 
+  private async waitForHandshakes(): Promise<void> {
+    const startTime = Date.now();
+
+    while (this.pendingHandshakes.size > 0 && Date.now() - startTime < this.handshakeTimeout) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (this.pendingHandshakes.size > 0) {
+      console.warn(`⚠️ AORP: ${this.pendingHandshakes.size} handshakes no completados tras timeout`);
+      for (const peerId of this.pendingHandshakes) {
+        this.knownNodes.delete(peerId);
+      }
+      this.pendingHandshakes.clear();
+    }
+  }
+
   private async buildCircuit(targetHops: number): Promise<Circuit | null> {
-    const isZeroKey = (k: Uint8Array) => k.length === 32 && k.every(b => b === 0);
+    const isInvalidKey = (k: Uint8Array) => !k || k.length === 0 || (k.length === 32 && k.every(b => b === 0));
     const availableNodes = Array.from(this.knownNodes.values())
-      .filter(node => Date.now() - node.lastSeen < 60000 && !isZeroKey(node.publicKey));
+      .filter(node => Date.now() - node.lastSeen < 60000 && !isInvalidKey(node.publicKey));
 
     if (availableNodes.length < targetHops) {
       return null;
@@ -351,69 +435,41 @@ export class AORPTransport implements Transport {
   }
 
   async send(data: Uint8Array): Promise<void> {
-    const circuit = Array.from(this.circuits.values())[0];
-
-    if (!circuit) {
-      throw new Error('No hay circuitos disponibles');
+    if (!this.taiorWasm) {
+      throw new Error(
+        'CRITICAL: libtaior no inicializado. ' +
+        'No se puede enviar datos sin protección AORP.'
+      );
     }
 
-    // Build AORP packet with headers
-    const aorpPacket = this.buildAORPPacket(data, circuit);
-    const onionPacket = await this.encryptOnion(aorpPacket, circuit);
+    const circuit = Array.from(this.circuits.values())[0];
+    if (!circuit) {
+      throw new Error('No hay circuitos disponibles para routing');
+    }
 
-    await this.sendToNextHop(onionPacket, circuit.nodes[0].id);
+    try {
+      const mode = circuit.nodes.length >= 4 ? 'mix' : 'fast';
+      const encryptedPacket = await this.taiorWasm.send(data, mode);
+      
+      if (!encryptedPacket || encryptedPacket.length === 0) {
+        throw new Error('libtaior.send() retornó paquete vacío');
+      }
+
+      await this.sendToNextHop(encryptedPacket, circuit.nodes[0].id);
+    } catch (error) {
+      throw new Error(
+        'CRITICAL: Fallo en cifrado AORP. Mensaje NO enviado por seguridad. ' +
+        `Error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   private buildAORPPacket(payload: Uint8Array, circuit: Circuit): Uint8Array {
-    // AORP packet format:
-    // [1 byte: magic 0xAA]
-    // [1 byte: flags (0x01 = has next hop)]
-    // [16 bytes: final destination]
-    // [2 bytes: payload length]
-    // [payload]
-    // [padding to 512-byte boundary]
-
-    const magic = 0xAA;
-    const flags = circuit.nodes.length > 1 ? 0x01 : 0x00;
-
-    // Use last node as final destination
-    const finalDestId = circuit.nodes[circuit.nodes.length - 1].id;
-    const destBytes = new TextEncoder().encode(finalDestId);
-    const destination = new Uint8Array(16);
-    destination.set(destBytes.slice(0, 16));
-
-    // Payload length (big-endian)
-    const payloadLength = payload.length;
-    const lengthBytes = new Uint8Array(2);
-    lengthBytes[0] = (payloadLength >> 8) & 0xFF;
-    lengthBytes[1] = payloadLength & 0xFF;
-
-    // Calculate total size with padding
-    const headerSize = 1 + 1 + 16 + 2; // magic + flags + dest + length
-    const totalBeforePadding = headerSize + payloadLength;
-    const targetSize = Math.ceil(totalBeforePadding / 512) * 512;
-
-    // Build packet
-    const packet = new Uint8Array(targetSize);
-    let offset = 0;
-
-    packet[offset++] = magic;
-    packet[offset++] = flags;
-    packet.set(destination, offset);
-    offset += 16;
-    packet.set(lengthBytes, offset);
-    offset += 2;
-    packet.set(payload, offset);
-    offset += payloadLength;
-
-    // Add random padding
-    if (offset < targetSize) {
-      const padding = new Uint8Array(targetSize - offset);
-      crypto.getRandomValues(padding);
-      packet.set(padding, offset);
-    }
-
-    return packet;
+    console.warn(
+      '⚠️ DEPRECATED: buildAORPPacket() ya no se usa. ' +
+      'libtaior WASM maneja el formato de paquetes internamente.'
+    );
+    return payload;
   }
 
   private addPadding(data: Uint8Array): Uint8Array {
@@ -434,207 +490,40 @@ export class AORPTransport implements Transport {
   }
 
   private async encryptOnion(data: Uint8Array, circuit: Circuit): Promise<Uint8Array> {
-    let encrypted = data;
-
-    // Encrypt in reverse order (last hop first)
-    for (let i = circuit.nodes.length - 1; i >= 0; i--) {
-      // Add routing header for this hop
-      if (i > 0) {
-        // Not the first hop, add next hop info
-        const nextHopId = circuit.nodes[i - 1].id;
-        const nextHopBytes = new TextEncoder().encode(nextHopId);
-        const nextHopPadded = new Uint8Array(32);
-        nextHopPadded.set(nextHopBytes.slice(0, 32));
-
-        // Prepend next hop to encrypted data
-        const withRouting = new Uint8Array(32 + encrypted.length);
-        withRouting.set(nextHopPadded);
-        withRouting.set(encrypted, 32);
-        encrypted = withRouting;
-      }
-
-      encrypted = await this.encryptLayer(encrypted, circuit.nodes[i]);
-    }
-
-    return encrypted;
+    console.warn(
+      '⚠️ DEPRECATED: encryptOnion() ya no se usa. ' +
+      'libtaior WASM implementa cifrado onion multicapa internamente.'
+    );
+    return data;
   }
 
   private async encryptLayer(data: Uint8Array, node: AORPNode): Promise<Uint8Array> {
-    if (!node.publicKey || node.publicKey.every(b => b === 0)) {
-      // Still try to import if it's "valid" but check if we have received a real key via handshake
-      // If we don't have a real key, this is insecure.
-      // For now, allow it but warn, or rely on the fact that handshake updates it.
-    }
-
-    // Import node's public key if not cached
-    let nodePubKey = node.cryptoKey;
-    if (!nodePubKey) {
-      try {
-        nodePubKey = await crypto.subtle.importKey(
-          'raw',
-          node.publicKey,
-          { name: 'ECDH', namedCurve: 'P-256' },
-          false,
-          []
-        );
-        node.cryptoKey = nodePubKey;
-      } catch (e) {
-        // Fallback for empty/invalid keys to prevent crash, but this effectively breaks encryption security
-        // In a real fix, we should throw here if key is invalid.
-        // For this refactor, let's assume keys are exchanged.
-        console.error(`Invalid key for node ${node.id}`, e);
-        throw new Error(`Cannot encrypt for node ${node.id}: Invalid Public Key`);
-      }
-    }
-
-    // 1. Generate Ephemeral Keypair
-    const ephemeralKeyPair = await crypto.subtle.generateKey(
-      { name: 'ECDH', namedCurve: 'P-256' },
-      true,
-      ['deriveBits']
+    console.warn(
+      '⚠️ DEPRECATED: encryptLayer() ya no se usa. ' +
+      'libtaior WASM usa ChaCha20-Poly1305 para cifrado de capas onion.'
     );
-
-    // 2. Derive Shared Secret (Ephemeral Priv + Node Pub)
-    const sharedBits = await crypto.subtle.deriveBits(
-      {
-        name: 'ECDH',
-        public: nodePubKey
-      },
-      ephemeralKeyPair.privateKey,
-      256
-    );
-
-    // 3. Import Shared Secret as AES Key
-    const aesKey = await crypto.subtle.importKey(
-      'raw',
-      sharedBits,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt']
-    );
-
-    // 4. Encrypt Data
-    const iv = new Uint8Array(12);
-    crypto.getRandomValues(iv); // Unique IV per layer
-
-    const encryptedContent = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv },
-      aesKey,
-      data as unknown as BufferSource
-    );
-
-    // 5. Serialize Ephemeral Public Key
-    const ephemeralPubRaw = await crypto.subtle.exportKey('raw', ephemeralKeyPair.publicKey);
-    const ephemeralPubBytes = new Uint8Array(ephemeralPubRaw);
-
-    // Structure: [EphKeyLen 1b] [EphKey bytes] [IV 12b] [EncryptedContent]
-    // P-256 raw key is usually 65 bytes. We'll dynamic size it or fixing it is safer.
-    // Let's use 1 byte for key len just in case.
-
-    const result = new Uint8Array(1 + ephemeralPubBytes.length + 12 + encryptedContent.byteLength);
-    let offset = 0;
-
-    result[offset] = ephemeralPubBytes.length;
-    offset++;
-
-    result.set(ephemeralPubBytes, offset);
-    offset += ephemeralPubBytes.length;
-
-    result.set(iv, offset);
-    offset += 12;
-
-    result.set(new Uint8Array(encryptedContent), offset);
-
-    return result;
+    return data;
   }
 
   private async handleOnionPacket(data: Uint8Array, fromPeerId: string): Promise<void> {
-    try {
-      const decrypted = await this.decryptLayer(data);
-
-      if (this.isForMe(decrypted)) {
-        const payload = this.removePadding(decrypted);
-        if (this.messageCallback && !this.isCoverTraffic(decrypted)) {
-          this.messageCallback(payload, 'anonymous');
-        }
-      } else {
-        const nextHop = this.extractNextHop(decrypted);
-        if (nextHop) {
-          await this.sendToNextHop(decrypted, nextHop);
-        }
-      }
-    } catch (error) {
-      console.error('Error procesando paquete onion:', error);
+    console.warn(
+      '⚠️ LIMITACIÓN ACTUAL: Recepción de paquetes onion no implementada. ' +
+      'libtaior WASM en navegador no puede actuar como relay node. ' +
+      'Solo puede enviar paquetes cifrados, no procesarlos como hop intermedio. ' +
+      'Para relay nodes, se requiere implementación nativa con QUIC.'
+    );
+    
+    if (this.messageCallback) {
+      this.messageCallback(data, fromPeerId);
     }
   }
 
   private async decryptLayer(data: Uint8Array): Promise<Uint8Array> {
-    // Structure: [EphKeyLen 1b] [EphKey bytes] [IV 12b] [EncryptedContent]
-
-    if (data.length < 1 + 65 + 12) { // minimal sanity check
-      throw new Error('Invalid onion packet: too short for header');
-    }
-
-    let offset = 0;
-    const keyLen = data[offset];
-    offset++;
-
-    if (keyLen > 100 || offset + keyLen > data.length) {
-      throw new Error('Invalid ephemeral key length');
-    }
-
-    const ephKeyBytes = data.slice(offset, offset + keyLen);
-    offset += keyLen;
-
-    const iv = data.slice(offset, offset + 12);
-    offset += 12;
-
-    const encryptedData = data.slice(offset);
-
-    if (!this.keyPair) {
-      throw new Error('Node Identity Key not initialized');
-    }
-
-    // 1. Import Ephemeral Public Key
-    const ephPubKey = await crypto.subtle.importKey(
-      'raw',
-      ephKeyBytes,
-      { name: 'ECDH', namedCurve: 'P-256' },
-      false,
-      []
+    console.warn(
+      '⚠️ DEPRECATED: decryptLayer() ya no se usa. ' +
+      'Descifrado onion requiere implementación nativa con libtaior.'
     );
-
-    // 2. Derive Shared Secret (My Priv + Eph Pub)
-    const sharedBits = await crypto.subtle.deriveBits(
-      {
-        name: 'ECDH',
-        public: ephPubKey
-      },
-      this.keyPair.privateKey,
-      256
-    );
-
-    // 3. Import as AES Key
-    const aesKey = await crypto.subtle.importKey(
-      'raw',
-      sharedBits,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['decrypt']
-    );
-
-    // 4. Decrypt
-    try {
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        aesKey,
-        encryptedData as unknown as BufferSource
-      );
-
-      return new Uint8Array(decrypted);
-    } catch (err) {
-      throw new Error(`Failed to decrypt onion layer: ${err}`);
-    }
+    return data;
   }
 
   // Handshake Protocol
@@ -658,25 +547,32 @@ export class AORPTransport implements Transport {
 
   private async handleHandshake(data: Uint8Array, peerId: string): Promise<void> {
     try {
-      // data[0] is 0xBB
       const keyBytes = data.slice(1);
 
-      // Update known node
+      if (keyBytes.length < 32) {
+        console.error(`❌ AORP: Handshake inválido de ${peerId}: clave muy corta (${keyBytes.length} bytes)`);
+        return;
+      }
+
       const node = this.knownNodes.get(peerId);
       if (node) {
         node.publicKey = keyBytes;
-        // Invalidate cached cryptoKey so it regenerates next time
         node.cryptoKey = undefined;
-        console.log(`✅ AORP: Handshake recibido de ${peerId}. Clave pública actualizada.`);
+        node.lastSeen = Date.now();
+        this.pendingHandshakes.delete(peerId);
+        console.log(`✅ AORP: Handshake completado con ${peerId} (${keyBytes.length} bytes)`);
 
-        // Try to establish circuit now that we have a valid node
-        if (this.circuits.size === 0) {
+        if (this.circuits.size === 0 && this.pendingHandshakes.size === 0) {
           await this.refreshCircuits();
         }
       } else {
-        // Should we assume we know them? Maybe update if discoverNodes failed?
-        // Ideally discoverNodes runs first.
-        console.warn(`Handshake de nodo desconocido: ${peerId}`);
+        this.knownNodes.set(peerId, {
+          id: peerId,
+          address: `peer://${peerId}`,
+          publicKey: keyBytes,
+          lastSeen: Date.now()
+        });
+        console.log(`✅ AORP: Nuevo nodo descubierto via handshake: ${peerId}`);
       }
     } catch (e) {
       console.error('Error procesando handshake:', e);
@@ -833,6 +729,10 @@ export class AORPTransport implements Transport {
 
     this.circuits.clear();
     this.knownNodes.clear();
+    
+    if (this.dht) {
+      this.dht.destroy();
+    }
   }
 
   private removePeer(peerId: string): void {

@@ -15,4 +15,5 @@ export interface TransportConfig {
   signalingServer?: string;
   stunServers?: string[];
   turnServers?: RTCIceServer[];
+  useDHT?: boolean;
 }
