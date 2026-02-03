@@ -1,6 +1,6 @@
 {
   "name": "hush",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "signaling": "node src/lib/signaling-server.ts"
+    "signaling": "node src/lib/signaling-server.ts",
+    "tauri": "cargo tauri",
+    "tauri:dev": "cargo tauri dev",
+    "tauri:build": "cargo tauri build"
   },
   "dependencies": {
     "@taiorproject/taior": "0.1.0",
@@ -19,9 +22,12 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^3.2.0",
+    "@sveltejs/adapter-static": "^3.0.1",
     "@sveltejs/kit": "^2.5.0",
     "@sveltejs/vite-plugin-svelte": "^3.0.0",
     "@tailwindcss/forms": "^0.5.7",
+    "@tauri-apps/api": "^2.0.0-rc",
+    "@tauri-apps/cli": "^2.0.0-rc",
     "@types/node": "^20.10.0",
     "autoprefixer": "^10.4.16",
     "flowbite": "^2.2.1",

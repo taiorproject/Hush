@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "../taior-URI"
+		},
+		{
+			"path": "../EthicalMetrics-1"
 		}
 	],
 	"settings": {}
