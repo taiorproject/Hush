@@ -5,12 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "prebuild": "npm run build:wasm",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "signaling": "node src/lib/signaling-server.ts",
-    "build:wasm": "cd ../libtaior && ./build-wasm.sh && cd ../Hush && npm install ../libtaior/pkg"
+    "signaling": "node src/lib/signaling-server.ts"
   },
   "dependencies": {
     "@taiorproject/taior": "0.1.0",
