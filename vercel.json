@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build",
+  "framework": "sveltekit",
+  "installCommand": "npm install",
+  "devCommand": "npm run dev",
+  "outputDirectory": ".vercel/output",
+  "functions": {
+    "**/*": {
+      "runtime": "nodejs20.x"
+    }
+  }
+}
