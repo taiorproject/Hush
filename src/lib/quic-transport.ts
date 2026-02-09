@@ -65,20 +65,26 @@ export class QuicTransport {
   }
 }
 
+// Relay public keys must be the SHA-256 fingerprint of the relay's TLS certificate.
+// These are verified by PinnedCertVerifier on the Tauri/QUIC side.
+// In production, these MUST be replaced with real certificate fingerprints.
 export const DEFAULT_RELAYS: RelayInfo[] = [
   {
     address: 'relay1.taior.net',
     port: 4433,
-    public_key: 'placeholder_key_1'
+    // TODO: Replace with real relay certificate SHA-256 fingerprint
+    public_key: undefined
   },
   {
     address: 'relay2.taior.net',
     port: 4433,
-    public_key: 'placeholder_key_2'
+    // TODO: Replace with real relay certificate SHA-256 fingerprint
+    public_key: undefined
   },
   {
     address: 'localhost',
     port: 4433,
-    public_key: 'dev_key'
+    // Local dev relay — no pinning required in development
+    public_key: undefined
   }
 ];

@@ -73,12 +73,19 @@ pub async fn taior_send(
         .map_err(|e| format!("AORP routing failed: {}", e))?;
     
     tracing::debug!(
-        "Message routed via AORP - mode: {}, size: {} bytes", 
-        mode, 
+        "Message routed via AORP - size: {} bytes", 
         packet.size()
     );
     
-    Ok(packet.encrypted_payload)
+    // Serialize: [4 bytes payload_len] [encrypted_payload] [ikm]
+    // Same format as wasm.rs send() for consistency
+    let payload_len = packet.encrypted_payload.len() as u32;
+    let mut result = Vec::with_capacity(4 + packet.encrypted_payload.len() + packet.ikm.len());
+    result.extend_from_slice(&payload_len.to_be_bytes());
+    result.extend_from_slice(&packet.encrypted_payload);
+    result.extend_from_slice(&packet.ikm);
+    
+    Ok(result)
 }
 
 #[tauri::command]

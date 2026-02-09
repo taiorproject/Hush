@@ -21,15 +21,17 @@ impl RelayDiscovery {
     pub fn new() -> Self {
         let mut known_relays = HashMap::new();
         
+        // TODO: Replace public_key with real SHA-256 certificate fingerprints
+        // These must match the PinnedCertVerifier hashes in quic_transport.rs
         known_relays.insert(
             "relay1".to_string(),
             RelayNode {
                 id: "relay1".to_string(),
                 address: "relay1.taior.net".to_string(),
                 port: 4433,
-                public_key: "placeholder_key_1".to_string(),
-                latency_ms: Some(50),
-                bandwidth_mbps: Some(100),
+                public_key: String::new(),
+                latency_ms: None,
+                bandwidth_mbps: None,
             },
         );
         
@@ -39,9 +41,9 @@ impl RelayDiscovery {
                 id: "relay2".to_string(),
                 address: "relay2.taior.net".to_string(),
                 port: 4433,
-                public_key: "placeholder_key_2".to_string(),
-                latency_ms: Some(80),
-                bandwidth_mbps: Some(80),
+                public_key: String::new(),
+                latency_ms: None,
+                bandwidth_mbps: None,
             },
         );
 

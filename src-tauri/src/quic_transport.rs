@@ -65,9 +65,11 @@ impl QuicTransport {
 }
 
 fn configure_client() -> Result<ClientConfig> {
+    // TODO: Load pinned relay certificate hashes from app configuration
+    let pinned_hashes: Vec<[u8; 32]> = Vec::new();
     let crypto = rustls::ClientConfig::builder()
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
+        .with_custom_certificate_verifier(Arc::new(PinnedCertVerifier::new(pinned_hashes)))
         .with_no_client_auth();
 
     Ok(ClientConfig::new(Arc::new(
@@ -75,19 +77,52 @@ fn configure_client() -> Result<ClientConfig> {
     )))
 }
 
+/// Certificate pinning verifier: accepts only certificates whose SHA-256 fingerprint
+/// matches one of the pinned hashes. Prevents MITM attacks on relay connections.
 #[derive(Debug)]
-struct SkipServerVerification;
+struct PinnedCertVerifier {
+    pinned_hashes: Vec<[u8; 32]>,
+}
 
-impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
+impl PinnedCertVerifier {
+    fn new(pinned_hashes: Vec<[u8; 32]>) -> Self {
+        Self { pinned_hashes }
+    }
+
+    fn fingerprint(cert: &CertificateDer<'_>) -> [u8; 32] {
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(cert.as_ref());
+        let result = hasher.finalize();
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&result);
+        hash
+    }
+}
+
+impl rustls::client::danger::ServerCertVerifier for PinnedCertVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &CertificateDer<'_>,
+        end_entity: &CertificateDer<'_>,
         _intermediates: &[CertificateDer<'_>],
         _server_name: &rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
         _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
+        if self.pinned_hashes.is_empty() {
+            return Err(rustls::Error::General(
+                "No pinned certificates configured. Cannot verify relay identity.".into()
+            ));
+        }
+
+        let cert_hash = Self::fingerprint(end_entity);
+        if self.pinned_hashes.iter().any(|pin| pin == &cert_hash) {
+            Ok(rustls::client::danger::ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::General(
+                "Certificate fingerprint does not match any pinned hash. Possible MITM.".into()
+            ))
+        }
     }
 
     fn verify_tls12_signature(

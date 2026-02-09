@@ -80,10 +80,11 @@ export class AORPTransport implements Transport {
 
     console.log('🔍 AORP: Conectando via DHT (sin signaling centralizado)');
     
+    // Bootstrap nodes must match the relay infrastructure.
+    // Use the same addresses configured in DEFAULT_RELAYS.
     const bootstrapNodes = [
-      'wss://relay1.hush.network',
-      'wss://relay2.hush.network',
-      'wss://relay3.hush.network'
+      'wss://relay1.taior.net:4433',
+      'wss://relay2.taior.net:4433'
     ];
 
     for (const node of bootstrapNodes) {
@@ -464,12 +465,11 @@ export class AORPTransport implements Transport {
     }
   }
 
-  private buildAORPPacket(payload: Uint8Array, circuit: Circuit): Uint8Array {
-    console.warn(
-      '⚠️ DEPRECATED: buildAORPPacket() ya no se usa. ' +
-      'libtaior WASM maneja el formato de paquetes internamente.'
+  private buildAORPPacket(_payload: Uint8Array, _circuit: Circuit): Uint8Array {
+    throw new Error(
+      'CRITICAL: buildAORPPacket() is deprecated and MUST NOT be used. ' +
+      'libtaior WASM handles packet formatting internally.'
     );
-    return payload;
   }
 
   private addPadding(data: Uint8Array): Uint8Array {
@@ -489,41 +489,47 @@ export class AORPTransport implements Transport {
     return padded;
   }
 
-  private async encryptOnion(data: Uint8Array, circuit: Circuit): Promise<Uint8Array> {
-    console.warn(
-      '⚠️ DEPRECATED: encryptOnion() ya no se usa. ' +
-      'libtaior WASM implementa cifrado onion multicapa internamente.'
+  private async encryptOnion(_data: Uint8Array, _circuit: Circuit): Promise<Uint8Array> {
+    throw new Error(
+      'CRITICAL: encryptOnion() is deprecated and MUST NOT be used. ' +
+      'libtaior WASM implements onion encryption internally.'
     );
-    return data;
   }
 
-  private async encryptLayer(data: Uint8Array, node: AORPNode): Promise<Uint8Array> {
-    console.warn(
-      '⚠️ DEPRECATED: encryptLayer() ya no se usa. ' +
-      'libtaior WASM usa ChaCha20-Poly1305 para cifrado de capas onion.'
+  private async encryptLayer(_data: Uint8Array, _node: AORPNode): Promise<Uint8Array> {
+    throw new Error(
+      'CRITICAL: encryptLayer() is deprecated and MUST NOT be used. ' +
+      'libtaior WASM uses ChaCha20-Poly1305 for onion layer encryption.'
     );
-    return data;
   }
 
   private async handleOnionPacket(data: Uint8Array, fromPeerId: string): Promise<void> {
-    console.warn(
-      '⚠️ LIMITACIÓN ACTUAL: Recepción de paquetes onion no implementada. ' +
-      'libtaior WASM en navegador no puede actuar como relay node. ' +
-      'Solo puede enviar paquetes cifrados, no procesarlos como hop intermedio. ' +
-      'Para relay nodes, se requiere implementación nativa con QUIC.'
-    );
-    
-    if (this.messageCallback) {
-      this.messageCallback(data, fromPeerId);
+    if (this.isCoverTraffic(data)) {
+      return;
+    }
+
+    if (this.isForMe(data)) {
+      const payload = this.removePadding(data);
+      if (this.messageCallback) {
+        this.messageCallback(payload, fromPeerId);
+      }
+      return;
+    }
+
+    // Not for us — attempt to forward as relay if next hop is known
+    const nextHop = this.extractNextHop(data);
+    if (nextHop && this.dataChannels.has(nextHop)) {
+      const jitter = Math.random() * 100;
+      await new Promise(resolve => setTimeout(resolve, jitter));
+      await this.sendToNextHop(data, nextHop);
     }
   }
 
-  private async decryptLayer(data: Uint8Array): Promise<Uint8Array> {
-    console.warn(
-      '⚠️ DEPRECATED: decryptLayer() ya no se usa. ' +
-      'Descifrado onion requiere implementación nativa con libtaior.'
+  private async decryptLayer(_data: Uint8Array): Promise<Uint8Array> {
+    throw new Error(
+      'CRITICAL: decryptLayer() is deprecated and MUST NOT be used. ' +
+      'Onion decryption requires native libtaior implementation.'
     );
-    return data;
   }
 
   // Handshake Protocol
@@ -687,7 +693,7 @@ export class AORPTransport implements Transport {
 
   private async sendCoverTraffic(): Promise<void> {
     const circuit = Array.from(this.circuits.values())[0];
-    if (!circuit) return;
+    if (!circuit || !this.taiorWasm) return;
 
     const size = 512 + Math.floor(Math.random() * 1536);
     const coverData = new Uint8Array(size);
@@ -695,10 +701,11 @@ export class AORPTransport implements Transport {
     crypto.getRandomValues(coverData.subarray(1));
 
     try {
-      const onionPacket = await this.encryptOnion(coverData, circuit);
-      await this.sendToNextHop(onionPacket, circuit.nodes[0].id);
+      const encryptedCover = await this.taiorWasm.send(coverData, 'fast');
+      await this.sendToNextHop(encryptedCover, circuit.nodes[0].id);
       this.lastCoverSent = Date.now();
     } catch (error) {
+      // Cover traffic failures are non-fatal but should be logged
       console.error('Error enviando cover traffic:', error);
     }
   }

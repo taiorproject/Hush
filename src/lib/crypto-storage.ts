@@ -1,5 +1,5 @@
 export class CryptoStorage {
-  private async deriveKey(roomKey: string): Promise<CryptoKey> {
+  private async deriveKey(roomKey: string, salt: Uint8Array): Promise<CryptoKey> {
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -12,7 +12,7 @@ export class CryptoStorage {
     return crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
-        salt: encoder.encode('hush-salt-v1'),
+        salt: salt.buffer as ArrayBuffer,
         iterations: 100000,
         hash: 'SHA-256'
       },
@@ -24,8 +24,9 @@ export class CryptoStorage {
   }
 
   async encrypt(data: string, roomKey: string): Promise<string> {
-    const key = await this.deriveKey(roomKey);
     const encoder = new TextEncoder();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await this.deriveKey(roomKey, salt);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     
     const encrypted = await crypto.subtle.encrypt(
@@ -34,19 +35,23 @@ export class CryptoStorage {
       encoder.encode(data)
     );
 
-    const combined = new Uint8Array(iv.length + encrypted.byteLength);
-    combined.set(iv, 0);
-    combined.set(new Uint8Array(encrypted), iv.length);
+    // Format: [16 bytes salt] [12 bytes iv] [ciphertext]
+    const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+    combined.set(salt, 0);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(encrypted), salt.length + iv.length);
 
     return btoa(String.fromCharCode(...combined));
   }
 
   async decrypt(encryptedData: string, roomKey: string): Promise<string> {
-    const key = await this.deriveKey(roomKey);
     const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
     
-    const iv = combined.slice(0, 12);
-    const data = combined.slice(12);
+    const salt = combined.slice(0, 16);
+    const iv = combined.slice(16, 28);
+    const data = combined.slice(28);
+
+    const key = await this.deriveKey(roomKey, salt);
 
     const decrypted = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv },

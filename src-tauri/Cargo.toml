@@ -23,6 +23,7 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 uuid = { version = "1.6", features = ["v4", "serde"] }
+sha2 = "0.10"
 
 # Integración con libtaior local (sin features WASM para build nativo)
 taior = { path = "../../libtaior", default-features = false, features = ["fast-mode", "mix-mode"] }
